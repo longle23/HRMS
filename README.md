@@ -1,36 +1,75 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# HRMS - Candidate Outreach Portal
 
-## Getting Started
+Web nội bộ cho HR để:
 
-First, run the development server:
+- Đọc danh sách ứng viên từ NocoDB
+- Gửi mail mẫu qua Outlook (Reject / Invite Interview)
+- Lưu lịch sử thao tác (ai làm, khi nào, trạng thái sau thao tác)
+
+## 1) Cài đặt
+
+```bash
+npm install
+```
+
+Tạo file `.env.local` từ `.env.example`:
+
+```bash
+copy .env.example .env.local
+```
+
+## 2) Cấu hình NocoDB
+
+Thiết lập các biến:
+
+- `NOCODB_BASE_URL`: URL NocoDB (ví dụ `http://localhost:8080`)
+- `NOCODB_API_TOKEN`: API token của NocoDB
+- `NOCODB_CANDIDATES_TABLE`: ID bảng ứng viên
+- `NOCODB_ACTIONS_TABLE`: ID bảng log thao tác
+- `NOCODB_ACCOUNTS_TABLE`: ID bảng tài khoản đăng nhập
+
+### Gợi ý cột bảng ứng viên
+
+- `full_name`
+- `email`
+- `apply_position`
+- `Status`
+- `LastActionBy`
+- `LastActionAt`
+
+### Gợi ý cột bảng log thao tác
+
+- `CandidateName`
+- `Actor`
+- `Action`
+- `ActionTime`
+- `StatusAfter`
+
+### Gợi ý cột bảng Account
+
+- `username`
+- `password`
+- `full_name`
+- `email`
+
+## 3) Chạy local
 
 ```bash
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Mở [http://localhost:3000](http://localhost:3000).
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## 4) Cách dùng
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+1. Đăng nhập bằng tài khoản trong bảng `Account`
+2. Tìm kiếm ứng viên theo `full_name`, `email`, `apply_position`
+3. Chọn ứng viên và bấm:
+   - `Reject (Outlook)`: mở Outlook với mail từ chối prefill sẵn
+   - `Invite Interview (Outlook)`: mở Outlook với mail mời phỏng vấn prefill sẵn
+4. Hệ thống tự cập nhật trạng thái ứng viên và ghi log hành động theo user đăng nhập
 
-## Learn More
+## Lưu ý gửi mail
 
-To learn more about Next.js, take a look at the following resources:
-
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
-
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+- Hệ thống chỉ mở ứng dụng mail mặc định trên máy qua `mailto:` (không mở Outlook Web).
+- Để luôn gửi bằng `hr-support@sotransgroup.vn`, hãy đăng nhập tài khoản đó trong Outlook Desktop và đặt làm account gửi mặc định.
