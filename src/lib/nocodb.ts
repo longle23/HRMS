@@ -3,6 +3,12 @@ const NOCODB_API_TOKEN = process.env.NOCODB_API_TOKEN;
 const NOCODB_CANDIDATES_TABLE = process.env.NOCODB_CANDIDATES_TABLE;
 const NOCODB_ACTIONS_TABLE = process.env.NOCODB_ACTIONS_TABLE;
 const NOCODB_ACCOUNTS_TABLE = process.env.NOCODB_ACCOUNTS_TABLE;
+const NOCODB_JOB_DESCRIPTION_TABLE = process.env.NOCODB_JOB_DESCRIPTION_TABLE;
+const ONEDRIVE_TENANT_ID = process.env.ONEDRIVE_TENANT_ID;
+const ONEDRIVE_CLIENT_ID = process.env.ONEDRIVE_CLIENT_ID;
+const ONEDRIVE_CLIENT_SECRET = process.env.ONEDRIVE_CLIENT_SECRET;
+const ONEDRIVE_USER_ID = process.env.ONEDRIVE_USER_ID;
+const ONEDRIVE_FOLDER_PATH = process.env.ONEDRIVE_FOLDER_PATH;
 
 function assertEnv(name: string, value: string | undefined) {
   if (!value) {
@@ -110,5 +116,98 @@ export async function getAccountsFromNocoDB() {
 
   const data = (await response.json()) as unknown;
   return parseListPayload(data);
+}
+
+export async function getJobDescriptionsFromNocoDB() {
+  const tableId = assertEnv("NOCODB_JOB_DESCRIPTION_TABLE", NOCODB_JOB_DESCRIPTION_TABLE);
+  const response = await fetch(getTableUrl(tableId), {
+    headers: getHeaders(),
+    cache: "no-store",
+  });
+
+  if (!response.ok) {
+    const text = await response.text();
+    throw new Error(`NocoDB fetch job descriptions failed: ${response.status} - ${text}`);
+  }
+
+  const data = (await response.json()) as unknown;
+  return parseListPayload(data);
+}
+
+async function getOneDriveAccessToken() {
+  const tenantId = assertEnv("ONEDRIVE_TENANT_ID", ONEDRIVE_TENANT_ID);
+  const clientId = assertEnv("ONEDRIVE_CLIENT_ID", ONEDRIVE_CLIENT_ID);
+  const clientSecret = assertEnv("ONEDRIVE_CLIENT_SECRET", ONEDRIVE_CLIENT_SECRET);
+
+  const body = new URLSearchParams({
+    client_id: clientId,
+    client_secret: clientSecret,
+    scope: "https://graph.microsoft.com/.default",
+    grant_type: "client_credentials",
+  });
+
+  const response = await fetch(`https://login.microsoftonline.com/${tenantId}/oauth2/v2.0/token`, {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body,
+  });
+
+  if (!response.ok) {
+    const text = await response.text();
+    throw new Error(`OneDrive token request failed: ${response.status} - ${text}`);
+  }
+
+  const data = (await response.json()) as { access_token?: string };
+  if (!data.access_token) {
+    throw new Error("OneDrive token response missing access_token.");
+  }
+
+  return data.access_token;
+}
+
+function sanitizeFileName(fileName: string) {
+  return fileName.replace(/[\\/:*?"<>|]+/g, "-").replace(/\s+/g, " ").trim();
+}
+
+function buildUniqueFileName(fileName: string) {
+  const safeName = sanitizeFileName(fileName);
+  const dotIndex = safeName.lastIndexOf(".");
+  const baseName = dotIndex >= 0 ? safeName.slice(0, dotIndex) : safeName;
+  const extension = dotIndex >= 0 ? safeName.slice(dotIndex) : "";
+  return `${baseName}-${Date.now()}${extension}`;
+}
+
+function normalizeOneDriveFolderPath(folderPath: string) {
+  const trimmed = folderPath.trim().replace(/^\/+|\/+$/g, "");
+  return trimmed.replace(/^personal\/[^/]+\//i, "");
+}
+
+export async function uploadJobDescriptionToOneDrive(file: File, folderPath = "JD") {
+  const accessToken = await getOneDriveAccessToken();
+  const userId = assertEnv("ONEDRIVE_USER_ID", ONEDRIVE_USER_ID);
+  const configuredFolderPath = assertEnv("ONEDRIVE_FOLDER_PATH", ONEDRIVE_FOLDER_PATH);
+  const baseFolderPath = normalizeOneDriveFolderPath(configuredFolderPath);
+  const relativeFolderPath = normalizeOneDriveFolderPath(folderPath);
+  const safeFolderPath = [baseFolderPath, relativeFolderPath].filter(Boolean).join("/");
+  const uniqueFileName = buildUniqueFileName(file.name);
+  const uploadPath = safeFolderPath ? `${safeFolderPath}/${uniqueFileName}` : uniqueFileName;
+  const fileBuffer = Buffer.from(await file.arrayBuffer());
+
+  const response = await fetch(`https://graph.microsoft.com/v1.0/users/${encodeURIComponent(userId)}/drive/root:/${encodeURI(uploadPath)}:/content`, {
+    method: "PUT",
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+      "Content-Type": file.type || "application/pdf",
+    },
+    body: fileBuffer,
+  });
+
+  if (!response.ok) {
+    const text = await response.text();
+    throw new Error(`OneDrive upload failed: ${response.status} - ${text}`);
+  }
+
+  const data = (await response.json()) as { name?: string; webUrl?: string };
+  return { fileName: data.name ?? uniqueFileName, folderPath: safeFolderPath || "JD", itemUrl: data.webUrl };
 }
 

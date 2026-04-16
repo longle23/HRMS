@@ -14,13 +14,26 @@ export function mapCandidateRecord(record: AnyRecord) {
   const idValue = record.Id ?? record.id ?? record.ID ?? record.CandidateId;
   const id = String(idValue ?? "");
 
+  const rawStatus = pickString(record, ["status", "Status"], "new").toLowerCase();
+  const normalizedStatus =
+    rawStatus === "rejected" || rawStatus === "interview_invited" ? rawStatus : "new";
+
   return {
     id,
     name: pickString(record, ["full_name"], "Unknown"),
     email: pickString(record, ["email"], ""),
     position: pickString(record, ["apply_position"], "Unknown"),
-    status: pickString(record, ["status"], "New"),
+    status: normalizedStatus,
     lastActionBy: pickString(record, ["LastActionBy", "last_action_by"], "None"),
+    lastActionAt: pickString(record, ["LastActionAt", "last_action_at"], ""),
+    candidateSource: pickString(record, ["candidate_source"], ""),
+    address: pickString(record, ["address"], ""),
+    experience: pickString(record, ["experience"], ""),
+    skills: pickString(record, ["skills"], ""),
+    score: pickString(record, ["score"], ""),
+    recommendation: pickString(record, ["recommendation"], ""),
+    cvFileName: pickString(record, ["cv_file_name"], ""),
+    applyTime: pickString(record, ["apply_time"], ""),
     raw: record,
   };
 }
@@ -30,16 +43,15 @@ export function buildRejectMail(params: {
   position: string;
 }) {
   return {
-    subject: `[Kết quả ứng tuyển] ${params.position} - Cảm ơn bạn đã ứng tuyển`,
-    body: `Chào ${params.candidateName},
+    subject: `SOTRANS GROUP Application Update – ${params.position}`,
+    body: `Dear ${params.candidateName},
 
-Cảm ơn bạn đã dành thời gian ứng tuyển vị trí ${params.position} tại công ty chúng tôi.
-Sau khi xem xét hồ sơ, hiện tại chúng tôi chưa thể tiếp tục với hồ sơ của bạn ở vòng này.
+Thank you for your interest in ${params.position} at SOTRANS.
+After careful review, we regret to inform you that your profile is not the best match for this role at this time. However, your journey with SOTRANS doesn’t end here — we will keep your profile in our talent network for future opportunities.
+We appreciate your time and wish you all the best ahead.
+Warm regards,
 
-Chúng tôi đánh giá cao sự quan tâm của bạn và hy vọng sẽ có cơ hội hợp tác trong tương lai.
-
-Trân trọng,
-Phòng Nhân sự`,
+Human Resource Department`,
   };
 }
 
@@ -51,20 +63,56 @@ export function buildInterviewInviteMail(params: {
     "1B Đường Hoàng Diệu, Phường Xóm Chiếu, Thành phố Hồ Chí Minh";
 
   return {
-    subject: `[Thư mời phỏng vấn] Vị trí ${params.position}`,
+    subject: `SOTRANS LOGISTICS - INTERVIEW INVITATION - ${params.position} POSITION`,
+    body: `Dear ${params.candidateName},
+
+Thank you for your concern about opportunity at Sotrans Logistics.
+Per our conversation on phone, we would like to invite you to join the interview for the position of ${params.position}.
+
+      - Location: ${fixedInterviewLocation}
+      - Time: [HR điền]
+      - Contact: [HR điền]
+
+Please arrange your time to join on time.
+Thank you.! 
+Best regards,
+ 
+Human Resource Department`,
+  };
+}
+
+export function buildOnboardMail(params: {
+  candidateName: string;
+  position: string;
+}) {
+  const fixedInterviewLocation =
+    "1B Đường Hoàng Diệu, Phường Xóm Chiếu, Thành phố Hồ Chí Minh";
+
+  return {
+    subject: `SOTRANS LOGISTICS - ONBOARDING - ${params.position} POSITION`,
     body: `Chào ${params.candidateName},
 
-Chúc mừng bạn đã vượt qua vòng sàng lọc hồ sơ cho vị trí ${params.position}.
-Phòng Nhân sự trân trọng mời bạn tham gia buổi phỏng vấn với thông tin như sau:
+Công ty TNHH Một Thành Viên SOTRANS LOGISTICS vui mừng thông báo:
+ 
+Bạn đã trúng tuyển vị trí ${params.position}.
+Ngày nhận việc: [HR điền]
+Địa chỉ văn phòng: ${fixedInterviewLocation}
 
-- Vị trí: ${params.position}
-- Địa điểm: ${fixedInterviewLocation}
-- Thời gian dự kiến: [HR tự điền]
+Để chuẩn bị cho buổi nhận việc, bạn vui lòng chuẩn bị các giấy tờ sau:
 
-Vui lòng phản hồi email này để xác nhận tham gia.
+      - CCCD sao y công chứng
+      - Giấy giới thiệu có dấu mộc trường hoặc Bảng điểm có dấu mộc trường
+      - Staff Info (file word)
+      - Thỏa thuận bảo mật (sẽ được ký trong ngày onboard)
 
+Nếu có bất kỳ thắc mắc nào hoặc cần hỗ trợ thêm, bạn có thể liên hệ trực tiếp với bộ phận Nhân sự qua email hoặc số điện thoại bên dưới.
+
+Chúc mừng bạn đã trở thành một phần của đại gia đình SOTRANS LOGISTICS!
+Hẹn gặp bạn vào ngày onboard sắp tới nhé!
+ 
 Trân trọng,
-Phòng Nhân sự`,
+ 
+Human Resource Department`,
   };
 }
 

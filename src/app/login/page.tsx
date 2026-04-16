@@ -21,7 +21,7 @@ export default function LoginPage() {
     try {
       const parsed = JSON.parse(rawUser) as { username?: string };
       if (parsed?.username) {
-        router.replace("/dashboard");
+        router.replace("/welcome");
       } else {
         window.localStorage.removeItem("hrms_session_user");
       }
@@ -50,7 +50,7 @@ export default function LoginPage() {
 
       window.localStorage.setItem("hrms_session_user", JSON.stringify(data.user));
       setLoginPassword("");
-      router.replace("/dashboard");
+      router.replace("/welcome");
     } catch (error) {
       setLoginError(error instanceof Error ? error.message : "Đăng nhập thất bại.");
     } finally {

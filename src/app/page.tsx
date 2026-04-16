@@ -15,7 +15,7 @@ export default function Home() {
 
     try {
       const parsed = JSON.parse(rawUser) as { username?: string };
-      router.replace(parsed?.username ? "/dashboard" : "/login");
+      router.replace(parsed?.username ? "/welcome" : "/login");
     } catch {
       window.localStorage.removeItem("hrms_session_user");
       router.replace("/login");

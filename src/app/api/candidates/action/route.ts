@@ -16,11 +16,15 @@ export async function POST(request: NextRequest) {
 
     await updateCandidateInNocoDB(candidateId, {
       Status: statusAfter,
+      status: statusAfter,
       LastActionBy: actor,
+      last_action_by: actor,
       LastActionAt: now,
+      last_action_at: now,
     });
 
     await createActionLogInNocoDB({
+      candidate_name: candidateName,
       cadidate_name: candidateName,
       actor,
       action,

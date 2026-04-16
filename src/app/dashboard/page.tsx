@@ -1,36 +1,51 @@
 "use client";
 
-import Image from "next/image";
 import { useEffect, useMemo, useState } from "react";
-import { useRouter } from "next/navigation";
+import { TopNav } from "@/components/top-nav";
 import {
   buildInterviewInviteMail,
+  buildOnboardMail,
   buildRejectMail,
   toMailTargets,
 } from "@/lib/candidate-utils";
 import type { AccountUser, Candidate, CandidateAction } from "@/types/hr";
 
 type LoadState = "idle" | "loading" | "error";
-type PendingAction = {
-  candidate: Candidate;
-  action: CandidateAction;
-} | null;
+type PendingAction = { candidate: Candidate; action: CandidateAction } | null;
+type CandidateDetail = Candidate | null;
 
 const statusBadgeMap: Record<string, string> = {
-  new: "bg-sky-500/15 text-sky-300 border-sky-400/40",
-  rejected: "bg-rose-500/15 text-rose-300 border-rose-400/40",
-  interview_invited: "bg-emerald-500/15 text-emerald-300 border-emerald-400/40",
+  new: "bg-sky-500/15 text-sky-700 border-sky-400/40",
+  rejected: "bg-rose-500/15 text-rose-700 border-rose-400/40",
+  interview_invited: "bg-emerald-500/15 text-emerald-700 border-emerald-400/40",
 };
 
 function renderStatusLabel(status: string) {
-  if (status === "interview_invited") return "Interview Invited";
-  if (status === "rejected") return "Rejected";
-  if (status === "new") return "New";
+  if (status === "interview_invited") return "Đã mời phỏng vấn";
+  if (status === "rejected") return "Từ chối";
+  if (status === "new") return "Mới";
   return status;
 }
 
+function displayValue(value: unknown) {
+  if (value === null || value === undefined) return "-";
+  const text = String(value).trim();
+  return !text || text.toLowerCase() === "none" ? "-" : text;
+}
+
+function readSessionUser() {
+  if (typeof window === "undefined") return null;
+  const raw = window.localStorage.getItem("hrms_session_user");
+  if (!raw) return null;
+  try {
+    const parsed = JSON.parse(raw) as AccountUser;
+    return parsed?.username ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
 export default function DashboardPage() {
-  const router = useRouter();
   const [candidates, setCandidates] = useState<Candidate[]>([]);
   const [state, setState] = useState<LoadState>("idle");
   const [errorMessage, setErrorMessage] = useState("");
@@ -38,36 +53,26 @@ export default function DashboardPage() {
   const [savingId, setSavingId] = useState("");
   const [sessionUser, setSessionUser] = useState<AccountUser | null>(null);
   const [pendingAction, setPendingAction] = useState<PendingAction>(null);
+  const [selectedCandidate, setSelectedCandidate] = useState<CandidateDetail>(null);
+  const isRejected = (status: string) => status === "rejected";
+  const isInvited = (status: string) => status === "interview_invited";
 
   useEffect(() => {
-    const rawUser = window.localStorage.getItem("hrms_session_user");
-    if (!rawUser) {
-      router.replace("/login");
+    const user = readSessionUser();
+    if (!user) {
+      window.location.replace("/login");
       return;
     }
-    try {
-      const parsed = JSON.parse(rawUser) as AccountUser;
-      if (parsed?.username) setSessionUser(parsed);
-      else router.replace("/login");
-    } catch {
-      window.localStorage.removeItem("hrms_session_user");
-      router.replace("/login");
-    }
-  }, [router]);
+    setSessionUser(user);
+  }, []);
 
   async function loadCandidates() {
     try {
       setState("loading");
       setErrorMessage("");
       const response = await fetch("/api/candidates", { cache: "no-store" });
-      const data = (await response.json()) as {
-        candidates?: Candidate[];
-        error?: string;
-      };
-
-      if (!response.ok) {
-        throw new Error(data.error ?? "Không thể tải danh sách ứng viên.");
-      }
+      const data = (await response.json()) as { candidates?: Candidate[]; error?: string };
+      if (!response.ok) throw new Error(data.error ?? "Không thể tải danh sách ứng viên.");
       setCandidates(data.candidates ?? []);
       setState("idle");
     } catch (error) {
@@ -76,52 +81,36 @@ export default function DashboardPage() {
     }
   }
 
-  useEffect(() => {
-    if (sessionUser) {
-      void loadCandidates();
-    }
-  }, [sessionUser]);
+  useEffect(() => { if (sessionUser) void loadCandidates(); }, [sessionUser]);
 
   const filteredCandidates = useMemo(() => {
     const term = search.trim().toLowerCase();
     if (!term) return candidates;
-    return candidates.filter((candidate) =>
-      [candidate.name, candidate.email, candidate.position]
-        .join(" ")
-        .toLowerCase()
-        .includes(term),
-    );
+    return candidates.filter((candidate) => [candidate.name, candidate.email, candidate.position].join(" ").toLowerCase().includes(term));
   }, [candidates, search]);
+
+  const visibleCandidateCount = filteredCandidates.length;
 
   function handleLogout() {
     setSessionUser(null);
     setCandidates([]);
     setSearch("");
     window.localStorage.removeItem("hrms_session_user");
-    router.replace("/login");
+    window.location.replace("/login");
   }
 
   async function executeCandidateAction(candidate: Candidate, action: CandidateAction) {
-    if (!sessionUser) {
-      alert("Vui lòng đăng nhập.");
-      return;
-    }
-
-    if (!candidate.email) {
-      alert("Ứng viên chưa có email.");
-      return;
-    }
+    if (!sessionUser) return alert("Vui lòng đăng nhập.");
+    if (!candidate.email) return alert("Ứng viên chưa có email.");
 
     const mail =
       action === "reject"
         ? buildRejectMail({ candidateName: candidate.name, position: candidate.position })
-        : buildInterviewInviteMail({
-            candidateName: candidate.name,
-            position: candidate.position,
-          });
+        : action === "onboard"
+          ? buildOnboardMail({ candidateName: candidate.name, position: candidate.position })
+          : buildInterviewInviteMail({ candidateName: candidate.name, position: candidate.position });
 
-    const targets = toMailTargets(candidate.email, mail.subject, mail.body);
-    window.location.href = targets.mailto;
+    window.location.href = toMailTargets(candidate.email, mail.subject, mail.body).mailto;
 
     try {
       setSavingId(candidate.id);
@@ -136,17 +125,20 @@ export default function DashboardPage() {
         }),
       });
       const data = (await response.json()) as { error?: string };
-      if (!response.ok) {
-        throw new Error(data.error ?? "Lưu hành động thất bại.");
-      }
-
+      if (!response.ok) throw new Error(data.error ?? "Lưu hành động thất bại.");
       setCandidates((prev) =>
         prev.map((item) =>
           item.id === candidate.id
             ? {
                 ...item,
-                status: action === "reject" ? "rejected" : "interview_invited",
+                status:
+                  action === "reject"
+                    ? "rejected"
+                    : action === "onboard"
+                      ? "onboarded"
+                      : "interview_invited",
                 lastActionBy: sessionUser.fullName || sessionUser.username,
+                lastActionAt: new Date().toISOString(),
               }
             : item,
         ),
@@ -157,7 +149,6 @@ export default function DashboardPage() {
       setSavingId("");
     }
   }
-
   function handleAction(candidate: Candidate, action: CandidateAction) {
     setPendingAction({ candidate, action });
   }
@@ -171,148 +162,49 @@ export default function DashboardPage() {
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-sky-100 via-indigo-100 to-cyan-100 text-slate-800">
+      <TopNav user={sessionUser ? { name: sessionUser.fullName || sessionUser.username } : null} onLogout={handleLogout} />
       <div className="mx-auto w-full max-w-7xl px-3 py-4 sm:px-4 lg:px-6">
-        <header className="rounded-2xl border border-indigo-200/70 bg-white/90 p-4 shadow-[0_20px_50px_-35px_rgba(59,130,246,0.45)] backdrop-blur">
-          <div className="grid grid-cols-[auto_1fr_auto] items-center gap-3">
-            <div className="flex items-center">
-              <Image
-                src="/images/logo.png"
-                alt="Sotrans Group"
-                width={150}
-                height={38}
-                className="h-auto w-auto max-w-[150px]"
-                priority
-              />
-            </div>
-            <div className="text-center">
-              <p className="text-[10px] uppercase tracking-[0.28em] text-indigo-500">Internal HR Portal</p>
-              <h1 className="mt-1 text-lg font-bold sm:text-xl">
-                Quản lý ứng viên & gửi mail qua Outlook
-              </h1>
-            </div>
-            <div className="flex flex-col items-end gap-1">
-              <span className="rounded-full border border-indigo-200 bg-indigo-50 px-2.5 py-1 text-[11px] text-indigo-700">
-                Đăng nhập: {sessionUser?.fullName || sessionUser?.username}
-              </span>
-              <button
-                onClick={handleLogout}
-                className="rounded-full border border-indigo-300 px-2.5 py-1 text-[11px] font-semibold text-indigo-700 transition hover:bg-indigo-50"
-              >
-                Đăng xuất
-              </button>
-            </div>
-          </div>
-
-          <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2">
-            <div className="rounded-xl border border-indigo-200 bg-indigo-50/70 p-3">
-              <p className="text-xs uppercase tracking-wide text-indigo-500">Tổng ứng viên</p>
-              <p className="mt-1 text-xl font-bold text-slate-800">{candidates.length}</p>
-            </div>
-            <div className="rounded-xl border border-indigo-200 bg-indigo-50/70 p-3">
-              <p className="text-xs uppercase tracking-wide text-indigo-500">Đang hiển thị</p>
-              <p className="mt-1 text-xl font-bold text-indigo-300">{filteredCandidates.length}</p>
-            </div>
-          </div>
-        </header>
-
         <section className="mt-3 rounded-2xl border border-indigo-200/70 bg-white/90 p-3 shadow-xl sm:p-4">
+          <div className="mb-3 flex items-center justify-between rounded-2xl border border-emerald-200 bg-emerald-50/70 px-4 py-3">
+            <div>
+              <p className="text-[10px] uppercase tracking-wide text-emerald-600">Đang hiển thị</p>
+              <p className="text-lg font-bold text-emerald-700">{visibleCandidateCount}</p>
+            </div>
+            <p className="text-sm text-slate-600">Số lượng ứng viên</p>
+          </div>
+
           <div className="flex flex-wrap items-end gap-3">
             <div className="min-w-0 flex-1">
-              <label className="block text-xs font-medium text-slate-600">
-                Tìm kiếm ứng viên (Họ tên, email, vị trí)
-              </label>
-              <input
-                value={search}
-                onChange={(event) => setSearch(event.target.value)}
-                placeholder="Nhập tên, email hoặc vị trí ứng tuyển..."
-                className="mt-1 w-full rounded-lg border border-indigo-200 bg-white px-3 py-2 text-sm outline-none ring-indigo-400 transition placeholder:text-slate-400 focus:ring-2"
-              />
+              <label className="block text-xs font-medium text-slate-600">Tìm kiếm ứng viên (Họ tên, email, vị trí)</label>
+              <input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Nhập tên, email hoặc vị trí ứng tuyển..." className="mt-1 w-full rounded-lg border border-indigo-200 bg-white px-3 py-2 text-sm outline-none ring-indigo-400 transition placeholder:text-slate-400 focus:ring-2" />
             </div>
-            <button
-              onClick={() => setSearch("")}
-              className="rounded-lg border border-indigo-300 px-3 py-2 text-xs font-semibold text-indigo-700 transition hover:bg-indigo-50"
-            >
-              Xóa lọc
-            </button>
-            <button
-              onClick={() => void loadCandidates()}
-              className="rounded-lg bg-indigo-500 px-3 py-2 text-xs font-semibold text-white transition hover:bg-indigo-400"
-            >
-              Tải lại dữ liệu
-            </button>
+            <button onClick={() => setSearch("")} className="rounded-lg border border-indigo-300 px-3 py-2 text-xs font-semibold text-indigo-700 transition hover:bg-indigo-50">Xóa lọc</button>
+            <button onClick={() => void loadCandidates()} className="rounded-lg bg-gradient-to-r from-orange-500 via-amber-500 to-rose-500 px-3 py-2 text-xs font-semibold text-white transition hover:from-orange-400 hover:via-amber-400 hover:to-rose-400">Tải lại dữ liệu</button>
           </div>
         </section>
 
         <section className="mt-3">
-          <div className="mb-2 flex items-center justify-between">
-            <h2 className="text-base font-semibold">Danh sách ứng viên</h2>
-          </div>
-
-          {state === "loading" ? (
-            <div className="rounded-xl border border-indigo-200 bg-white p-6 text-slate-600">
-              Đang tải dữ liệu ứng viên...
-            </div>
-          ) : null}
-
-          {state === "error" ? (
-            <div className="rounded-xl border border-rose-300 bg-rose-50 p-6 text-rose-700">
-              {errorMessage}
-            </div>
-          ) : null}
-
-          {state !== "loading" && candidates.length === 0 ? (
-            <div className="rounded-xl border border-indigo-200 bg-white p-6 text-slate-600">
-              Chưa có ứng viên trong NocoDB.
-            </div>
-          ) : null}
-
-          {state !== "loading" && candidates.length > 0 && filteredCandidates.length === 0 ? (
-            <div className="rounded-xl border border-indigo-200 bg-white p-6 text-slate-600">
-              Không có kết quả khớp từ khóa tìm kiếm.
-            </div>
-          ) : null}
+          {state === "loading" ? <div className="rounded-xl border border-indigo-200 bg-white p-6 text-slate-600">Đang tải dữ liệu ứng viên...</div> : null}
+          {state === "error" ? <div className="rounded-xl border border-rose-300 bg-rose-50 p-6 text-rose-700">{errorMessage}</div> : null}
+          {state !== "loading" && candidates.length === 0 ? <div className="rounded-xl border border-indigo-200 bg-white p-6 text-slate-600">Chưa có ứng viên trong NocoDB.</div> : null}
+          {state !== "loading" && candidates.length > 0 && filteredCandidates.length === 0 ? <div className="rounded-xl border border-indigo-200 bg-white p-6 text-slate-600">Không có kết quả khớp từ khóa tìm kiếm.</div> : null}
 
           <div className="overflow-x-auto rounded-xl border border-indigo-200 bg-white/95">
             <div className="min-w-[1120px]">
               <div className="grid grid-cols-[1fr_1.2fr_0.9fr_0.8fr_1fr_1.3fr] gap-3 border-b border-indigo-200 bg-indigo-50 px-3 py-2 text-[11px] font-semibold uppercase tracking-wide text-slate-700">
-                <span>Họ tên</span>
-                <span>Email</span>
-                <span>Vị trí</span>
-                <span>Trạng thái</span>
-                <span>Người thao tác gần nhất</span>
-                <span>Thao tác</span>
+                <span>Họ tên</span><span>Email</span><span>Vị trí</span><span>Trạng thái</span><span>Người thao tác gần nhất</span><span>Thao tác</span>
               </div>
               {filteredCandidates.map((candidate) => (
-                <article
-                  key={candidate.id}
-                  className="grid grid-cols-[1fr_1.2fr_0.9fr_0.8fr_1fr_1.3fr] items-center gap-3 border-b border-indigo-100 px-3 py-2 text-sm transition hover:bg-indigo-50/70"
-                >
-                  <p className="truncate font-medium text-slate-800">{candidate.name}</p>
+                <article key={candidate.id} className="grid grid-cols-[1fr_1.2fr_0.9fr_0.8fr_1fr_1.3fr] items-center gap-3 border-b border-indigo-100 px-3 py-2 text-sm transition hover:bg-indigo-50/70">
+                  <button onClick={() => setSelectedCandidate(candidate)} className="truncate text-left font-medium text-slate-800 hover:underline">{candidate.name}</button>
                   <p className="truncate text-slate-600">{candidate.email || "No email"}</p>
                   <p className="truncate text-slate-600">{candidate.position}</p>
-                  <span
-                    className={`w-fit rounded-full border px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${
-                      statusBadgeMap[candidate.status] ?? "border-slate-600 bg-slate-800 text-slate-200"
-                    }`}
-                  >
-                    {renderStatusLabel(candidate.status)}
-                  </span>
-                  <p className="truncate text-slate-600">{candidate.lastActionBy || "-"}</p>
+                  <span className={`w-fit rounded-full border px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${statusBadgeMap[candidate.status] ?? "border-slate-600 bg-slate-800 text-slate-200"}`}>{renderStatusLabel(candidate.status)}</span>
+                  <p className="truncate text-slate-600">{displayValue(candidate.lastActionBy)}</p>
                   <div className="flex items-center gap-4">
-                    <button
-                      onClick={() => void handleAction(candidate, "reject")}
-                      disabled={savingId === candidate.id}
-                      className="inline-flex items-center rounded-lg bg-gradient-to-r from-rose-600 to-pink-600 px-3 py-1.5 text-xs font-semibold text-white shadow-[0_6px_14px_-6px_rgba(225,29,72,0.8)] transition hover:-translate-y-0.5 hover:from-rose-500 hover:to-pink-500 hover:shadow-[0_10px_18px_-8px_rgba(225,29,72,0.9)] disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:translate-y-0"
-                    >
-                      Reject
-                    </button>
-                    <button
-                      onClick={() => void handleAction(candidate, "invite_interview")}
-                      disabled={savingId === candidate.id}
-                      className="inline-flex items-center rounded-lg bg-gradient-to-r from-emerald-600 to-teal-600 px-3 py-1.5 text-xs font-semibold text-white shadow-[0_6px_14px_-6px_rgba(5,150,105,0.8)] transition hover:-translate-y-0.5 hover:from-emerald-500 hover:to-teal-500 hover:shadow-[0_10px_18px_-8px_rgba(5,150,105,0.9)] disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:translate-y-0"
-                    >
-                      Invite
-                    </button>
+                    <button onClick={() => void handleAction(candidate, "reject")} disabled={savingId === candidate.id || isRejected(candidate.status)} className="inline-flex items-center rounded-lg bg-gradient-to-r from-rose-600 to-pink-600 px-3 py-1.5 text-xs font-semibold text-white disabled:opacity-50">Reject</button>
+                    <button onClick={() => void handleAction(candidate, "invite_interview")} disabled={savingId === candidate.id || isInvited(candidate.status)} className="inline-flex items-center rounded-lg bg-gradient-to-r from-emerald-600 to-teal-600 px-3 py-1.5 text-xs font-semibold text-white disabled:opacity-50">Invite</button>
+                    <button onClick={() => void handleAction(candidate, "onboard")} disabled={savingId === candidate.id || candidate.status === "onboarded"} className="inline-flex items-center rounded-lg bg-gradient-to-r from-blue-600 to-indigo-600 px-3 py-1.5 text-xs font-semibold text-white disabled:opacity-50">Onboard</button>
                   </div>
                 </article>
               ))}
@@ -321,47 +213,83 @@ export default function DashboardPage() {
         </section>
       </div>
 
-      {pendingAction ? (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 p-4">
-          <div className="w-full max-w-md rounded-2xl border border-indigo-200 bg-white p-5 shadow-2xl">
-            <p className="text-xs font-semibold uppercase tracking-[0.2em] text-indigo-500">
-              Xác nhận thao tác
-            </p>
-            <h3 className="mt-2 text-lg font-bold text-slate-800">
-              {pendingAction.action === "reject" ? "Reject ứng viên" : "Mời phỏng vấn"}
-            </h3>
-            <p className="mt-2 text-sm text-slate-600">
-              Bạn có chắc muốn{" "}
-              <span className="font-semibold text-slate-800">
-                {pendingAction.action === "reject" ? "Reject" : "Invite Interview"}
-              </span>{" "}
-              cho ứng viên{" "}
-              <span className="font-semibold text-slate-800">{pendingAction.candidate.name}</span>?
-            </p>
-            <div className="mt-5 flex items-center justify-between gap-3">
-              <button
-                onClick={() => setPendingAction(null)}
-                disabled={Boolean(savingId)}
-                className="rounded-lg border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-100 disabled:opacity-60"
-              >
-                Hủy
-              </button>
-              <button
-                onClick={() => void confirmPendingAction()}
-                disabled={Boolean(savingId)}
-                className={`rounded-lg px-4 py-2 text-sm font-semibold text-white transition disabled:opacity-60 ${
-                  pendingAction.action === "reject"
-                    ? "bg-rose-600 hover:bg-rose-500"
-                    : "bg-emerald-600 hover:bg-emerald-500"
-                }`}
-              >
-                {savingId ? "Đang xử lý..." : "Xác nhận"}
-              </button>
+      {selectedCandidate ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/65 p-2 backdrop-blur-sm">
+          <div className="w-full max-w-6xl overflow-hidden rounded-[28px] border border-indigo-200 bg-white shadow-[0_28px_80px_-28px_rgba(15,23,42,0.6)]">
+            <div className="flex items-center justify-between border-b border-indigo-100 bg-gradient-to-r from-indigo-50 via-white to-cyan-50 px-5 py-4">
+              <div>
+                <p className="text-[10px] uppercase tracking-[0.24em] text-indigo-500">Chi tiết ứng viên</p>
+                <h3 className="text-2xl font-bold text-slate-900">{selectedCandidate.name}</h3>
+              </div>
+              <button onClick={() => setSelectedCandidate(null)} className="rounded-full border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50">Đóng</button>
+            </div>
+            <div className="max-h-[72vh] overflow-y-auto px-5 py-5">
+              <div className="grid gap-4 lg:grid-cols-3">
+                {[["Họ và tên", selectedCandidate.name], ["Email", selectedCandidate.email], ["Nguồn ứng tuyển", selectedCandidate.candidateSource], ["Vị trí ứng tuyển", selectedCandidate.position], ["Địa chỉ", selectedCandidate.address], ["Kinh nghiệm", selectedCandidate.experience], ["Kỹ năng", selectedCandidate.skills], ["Điểm đánh giá", selectedCandidate.score], ["Đề xuất", selectedCandidate.recommendation], ["Tên file CV", selectedCandidate.cvFileName], ["Thời gian nộp", selectedCandidate.applyTime], ["Trạng thái", selectedCandidate.status], ["Người thao tác gần nhất", selectedCandidate.lastActionBy], ["Thời gian thao tác gần nhất", selectedCandidate.lastActionAt]].map(([label, value]) => (
+                  <div key={label} className="rounded-3xl border border-slate-200 bg-gradient-to-br from-slate-50 to-white p-4 shadow-sm">
+                    <p className="text-[10px] font-semibold uppercase tracking-wide text-indigo-500">{label}</p>
+                    <p className="mt-2 whitespace-pre-line text-sm leading-6 text-slate-800">{displayValue(value)}</p>
+                  </div>
+                ))}
+              </div>
             </div>
           </div>
         </div>
       ) : null}
+
+      {pendingAction ? (() => {
+        const modalConfig =
+          pendingAction.action === "reject"
+            ? {
+                title: "Xác nhận từ chối ứng viên",
+                actionLabel: "Từ chối",
+                buttonLabel: "Xác nhận từ chối",
+                accent: "from-rose-600 via-pink-600 to-fuchsia-600",
+                badge: "bg-rose-500/15 text-rose-700 border-rose-300",
+              }
+            : pendingAction.action === "invite_interview"
+              ? {
+                  title: "Xác nhận mời phỏng vấn",
+                  actionLabel: "Mời phỏng vấn",
+                  buttonLabel: "Xác nhận mời",
+                  accent: "from-emerald-600 via-teal-600 to-cyan-600",
+                  badge: "bg-emerald-500/15 text-emerald-700 border-emerald-300",
+                }
+              : {
+                  title: "Xác nhận onboard ứng viên",
+                  actionLabel: "Onboard",
+                  buttonLabel: "Xác nhận onboard",
+                  accent: "from-indigo-600 via-blue-600 to-sky-600",
+                  badge: "bg-indigo-500/15 text-indigo-700 border-indigo-300",
+                };
+
+        return (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 p-3 backdrop-blur-md">
+            <div className="relative w-full max-w-xl overflow-hidden rounded-[32px] border border-white/20 bg-white/95 shadow-[0_30px_90px_-28px_rgba(15,23,42,0.6)]">
+              <div className={`absolute inset-x-0 top-0 h-1.5 bg-gradient-to-r ${modalConfig.accent}`} />
+              <div className="absolute -right-12 -top-12 h-32 w-32 rounded-full bg-white/60 blur-3xl" />
+              <div className={`absolute right-5 top-5 rounded-full border px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.22em] ${modalConfig.badge}`}>
+                {modalConfig.actionLabel}
+              </div>
+              <div className="relative p-7 pt-9">
+                <h3 className="text-2xl font-bold text-slate-900">{modalConfig.title}</h3>
+                <p className="mt-3 max-w-lg text-sm leading-7 text-slate-600">
+                  Bạn có chắc muốn <span className="font-semibold text-slate-900">{modalConfig.actionLabel}</span> ứng viên <span className="font-semibold text-slate-900">{pendingAction.candidate.name}</span> không?
+                </p>
+                <div className="mt-6 rounded-2xl border border-slate-100 bg-slate-50/80 p-4 text-sm leading-6 text-slate-600">
+                  Hành động này sẽ cập nhật trạng thái hồ sơ và gửi email tương ứng cho ứng viên.
+                </div>
+                <div className="mt-7 flex items-center justify-between gap-3">
+                  <button onClick={() => setPendingAction(null)} disabled={Boolean(savingId)} className="rounded-2xl border border-slate-300 bg-white px-5 py-3 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 disabled:opacity-60">Hủy</button>
+                  <button onClick={() => void confirmPendingAction()} disabled={Boolean(savingId)} className={`rounded-2xl bg-gradient-to-r ${modalConfig.accent} px-5 py-3 text-sm font-semibold text-white shadow-lg transition hover:brightness-110 disabled:opacity-60`}>
+                    {savingId ? "Đang xử lý..." : modalConfig.buttonLabel}
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        );
+      })() : null}
     </div>
   );
 }
-
