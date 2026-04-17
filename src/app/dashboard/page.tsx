@@ -66,22 +66,37 @@ export default function DashboardPage() {
     setSessionUser(user);
   }, []);
 
-  async function loadCandidates() {
+  async function loadCandidates(options?: { silent?: boolean }) {
+    const silent = options?.silent ?? false;
+
     try {
-      setState("loading");
-      setErrorMessage("");
+      if (!silent) {
+        setState("loading");
+        setErrorMessage("");
+      }
       const response = await fetch("/api/candidates", { cache: "no-store" });
       const data = (await response.json()) as { candidates?: Candidate[]; error?: string };
       if (!response.ok) throw new Error(data.error ?? "Không thể tải danh sách ứng viên.");
       setCandidates(data.candidates ?? []);
-      setState("idle");
+      if (!silent) setState("idle");
     } catch (error) {
-      setState("error");
-      setErrorMessage(error instanceof Error ? error.message : "Đã xảy ra lỗi.");
+      if (!silent) {
+        setState("error");
+        setErrorMessage(error instanceof Error ? error.message : "Đã xảy ra lỗi.");
+      }
     }
   }
 
-  useEffect(() => { if (sessionUser) void loadCandidates(); }, [sessionUser]);
+  useEffect(() => {
+    if (!sessionUser) return;
+
+    void loadCandidates();
+    const intervalId = window.setInterval(() => {
+      void loadCandidates({ silent: true });
+    }, 15000);
+
+    return () => window.clearInterval(intervalId);
+  }, [sessionUser]);
 
   const filteredCandidates = useMemo(() => {
     const term = search.trim().toLowerCase();
@@ -214,23 +229,67 @@ export default function DashboardPage() {
       </div>
 
       {selectedCandidate ? (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/65 p-2 backdrop-blur-sm">
-          <div className="w-full max-w-6xl overflow-hidden rounded-[28px] border border-indigo-200 bg-white shadow-[0_28px_80px_-28px_rgba(15,23,42,0.6)]">
-            <div className="flex items-center justify-between border-b border-indigo-100 bg-gradient-to-r from-indigo-50 via-white to-cyan-50 px-5 py-4">
-              <div>
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 p-3 backdrop-blur-md">
+          <div className="relative w-full max-w-7xl overflow-hidden rounded-[32px] border border-white/20 bg-white/95 shadow-[0_30px_90px_-28px_rgba(15,23,42,0.6)]">
+            <div className="pointer-events-none absolute inset-x-0 top-0 h-1.5 bg-gradient-to-r from-indigo-600 via-blue-600 to-cyan-500" />
+            <div className="pointer-events-none absolute -left-10 top-0 h-36 w-36 rounded-full bg-indigo-100/70 blur-3xl" />
+            <div className="pointer-events-none absolute -right-10 top-6 h-40 w-40 rounded-full bg-cyan-100/70 blur-3xl" />
+            <div className="relative z-10 flex flex-wrap items-start justify-between gap-4 border-b border-indigo-100 bg-gradient-to-r from-indigo-50 via-white to-cyan-50 px-6 py-5">
+              <div className="min-w-0">
                 <p className="text-[10px] uppercase tracking-[0.24em] text-indigo-500">Chi tiết ứng viên</p>
-                <h3 className="text-2xl font-bold text-slate-900">{selectedCandidate.name}</h3>
+                <h3 className="mt-1 text-2xl font-bold text-slate-900 sm:text-3xl">{selectedCandidate.name}</h3>
               </div>
-              <button onClick={() => setSelectedCandidate(null)} className="rounded-full border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50">Đóng</button>
+              <button onClick={() => setSelectedCandidate(null)} aria-label="Đóng modal" className="group inline-flex items-center gap-2 rounded-full border border-indigo-200 bg-white px-4 py-2.5 text-sm font-semibold text-indigo-700 shadow-sm transition hover:-translate-y-0.5 hover:border-indigo-300 hover:bg-indigo-50 hover:shadow-md focus:outline-none focus:ring-2 focus:ring-indigo-400 focus:ring-offset-2">
+                <span className="flex h-6 w-6 items-center justify-center rounded-full bg-indigo-600 text-[11px] font-bold text-white transition group-hover:bg-indigo-700">×</span>
+                Đóng
+              </button>
             </div>
-            <div className="max-h-[72vh] overflow-y-auto px-5 py-5">
-              <div className="grid gap-4 lg:grid-cols-3">
-                {[["Họ và tên", selectedCandidate.name], ["Email", selectedCandidate.email], ["Nguồn ứng tuyển", selectedCandidate.candidateSource], ["Vị trí ứng tuyển", selectedCandidate.position], ["Địa chỉ", selectedCandidate.address], ["Kinh nghiệm", selectedCandidate.experience], ["Kỹ năng", selectedCandidate.skills], ["Điểm đánh giá", selectedCandidate.score], ["Đề xuất", selectedCandidate.recommendation], ["Tên file CV", selectedCandidate.cvFileName], ["Thời gian nộp", selectedCandidate.applyTime], ["Trạng thái", selectedCandidate.status], ["Người thao tác gần nhất", selectedCandidate.lastActionBy], ["Thời gian thao tác gần nhất", selectedCandidate.lastActionAt]].map(([label, value]) => (
-                  <div key={label} className="rounded-3xl border border-slate-200 bg-gradient-to-br from-slate-50 to-white p-4 shadow-sm">
-                    <p className="text-[10px] font-semibold uppercase tracking-wide text-indigo-500">{label}</p>
-                    <p className="mt-2 whitespace-pre-line text-sm leading-6 text-slate-800">{displayValue(value)}</p>
+            <div className="max-h-[76vh] overflow-y-auto px-6 py-6">
+              <div className="grid gap-4 lg:grid-cols-[1.05fr_0.95fr] xl:grid-cols-[1.2fr_0.8fr]">
+                <div className="space-y-4">
+                  <div className="rounded-3xl border border-indigo-100 bg-gradient-to-br from-indigo-50/80 to-white p-5 shadow-sm">
+                    <p className="text-[10px] font-semibold uppercase tracking-wide text-indigo-500">Tổng quan</p>
+                    <div className="mt-4 grid gap-3 sm:grid-cols-2">
+                      {[["Họ và tên", selectedCandidate.name], ["Email", selectedCandidate.email], ["Vị trí ứng tuyển", selectedCandidate.position], ["Nguồn ứng tuyển", selectedCandidate.candidateSource]].map(([label, value]) => (
+                        <div key={label} className="rounded-2xl border border-slate-200 bg-white px-4 py-3">
+                          <p className="text-[10px] font-semibold uppercase tracking-wide text-indigo-500">{label}</p>
+                          <p className="mt-2 text-sm leading-6 text-slate-800">{displayValue(value)}</p>
+                        </div>
+                      ))}
+                    </div>
                   </div>
-                ))}
+                  <div className="grid gap-4 sm:grid-cols-2">
+                    {[["Địa chỉ", selectedCandidate.address], ["Kinh nghiệm", selectedCandidate.experience], ["Điểm đánh giá", selectedCandidate.score], ["Trạng thái", selectedCandidate.status]].map(([label, value]) => (
+                      <div key={label} className="rounded-3xl border border-slate-200 bg-white p-4 shadow-sm">
+                        <p className="text-[10px] font-semibold uppercase tracking-wide text-indigo-500">{label}</p>
+                        <p className="mt-2 whitespace-pre-line text-sm leading-6 text-slate-800">{displayValue(value)}</p>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+                <div className="space-y-4">
+                  <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
+                    <p className="text-[10px] font-semibold uppercase tracking-wide text-indigo-500">Kỹ năng & đánh giá</p>
+                    <div className="mt-4 space-y-4 text-sm leading-6 text-slate-800">
+                      <div>
+                        <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Kỹ năng</p>
+                        <p className="mt-2 whitespace-pre-line rounded-2xl bg-slate-50 px-4 py-3">{displayValue(selectedCandidate.skills)}</p>
+                      </div>
+                      <div>
+                        <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Đề xuất</p>
+                        <p className="mt-2 whitespace-pre-line rounded-2xl bg-slate-50 px-4 py-3">{displayValue(selectedCandidate.recommendation)}</p>
+                      </div>
+                    </div>
+                  </div>
+                  <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-1">
+                    {[["Tên file CV", selectedCandidate.cvFileName], ["Thời gian nộp", selectedCandidate.applyTime], ["Người thao tác gần nhất", selectedCandidate.lastActionBy], ["Thời gian thao tác gần nhất", selectedCandidate.lastActionAt]].map(([label, value]) => (
+                      <div key={label} className="rounded-3xl border border-slate-200 bg-gradient-to-br from-slate-50 to-white p-4 shadow-sm">
+                        <p className="text-[10px] font-semibold uppercase tracking-wide text-indigo-500">{label}</p>
+                        <p className="mt-2 whitespace-pre-line text-sm leading-6 text-slate-800">{displayValue(value)}</p>
+                      </div>
+                    ))}
+                  </div>
+                </div>
               </div>
             </div>
           </div>
