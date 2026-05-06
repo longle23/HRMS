@@ -4,6 +4,8 @@ const NOCODB_CANDIDATES_TABLE = process.env.NOCODB_CANDIDATES_TABLE;
 const NOCODB_ACTIONS_TABLE = process.env.NOCODB_ACTIONS_TABLE;
 const NOCODB_ACCOUNTS_TABLE = process.env.NOCODB_ACCOUNTS_TABLE;
 const NOCODB_JOB_DESCRIPTION_TABLE = process.env.NOCODB_JOB_DESCRIPTION_TABLE;
+const NOCODB_EMAIL_TEMPLATES_TABLE = process.env.NOCODB_EMAIL_TEMPLATES_TABLE;
+const NOCODB_LOG_EMAIL_TEMPLATES_TABLE = process.env.NOCODB_LOG_TEMPLATES_TABLE;
 const ONEDRIVE_TENANT_ID = process.env.ONEDRIVE_TENANT_ID;
 const ONEDRIVE_CLIENT_ID = process.env.ONEDRIVE_CLIENT_ID;
 const ONEDRIVE_CLIENT_SECRET = process.env.ONEDRIVE_CLIENT_SECRET;
@@ -132,6 +134,87 @@ export async function getJobDescriptionsFromNocoDB() {
 
   const data = (await response.json()) as unknown;
   return parseListPayload(data);
+}
+
+export async function getEmailTemplateFromNocoDB() {
+  const tableId = assertEnv("NOCODB_EMAIL_TEMPLATES_TABLE", NOCODB_EMAIL_TEMPLATES_TABLE);
+  const response = await fetch(getTableUrl(tableId), {
+    headers: getHeaders(),
+    cache: "no-store",
+  });
+
+  if (!response.ok) {
+    const text = await response.text();
+    throw new Error(`NocoDB fetch email templates failed: ${response.status} - ${text}`);
+  }
+
+  const data = (await response.json()) as unknown;
+  return parseListPayload(data);
+}
+
+export async function updateEmailTemplateInNocoDB(fields: Record<string, unknown>) {
+  const tableId = assertEnv("NOCODB_EMAIL_TEMPLATES_TABLE", NOCODB_EMAIL_TEMPLATES_TABLE);
+  const tableUrl = getTableUrl(tableId);
+  const key = typeof fields.key === "string" ? fields.key : "";
+
+  const existingResponse = await fetch(tableUrl, {
+    headers: getHeaders(),
+    cache: "no-store",
+  });
+
+  if (!existingResponse.ok) {
+    const text = await existingResponse.text();
+    throw new Error(`NocoDB fetch email templates failed: ${existingResponse.status} - ${text}`);
+  }
+
+  const existingData = (await existingResponse.json()) as unknown;
+  const records = parseListPayload(existingData);
+  const current = records.find((record) => record.key === key) as Record<string, unknown> | undefined;
+
+  if (!current) {
+    throw new Error(`NocoDB email template not found for key: ${key}`);
+  }
+
+  const recordId = String(current.Id ?? current.id ?? current.ID ?? "");
+  if (!recordId) {
+    throw new Error(`NocoDB email template record id missing for key: ${key}`);
+  }
+
+  const patchPayload = {
+    Id: recordId,
+    key: fields.key,
+    subject: fields.subject,
+    body: fields.body,
+    updateBy: fields.updateBy,
+    updateAt: fields.updateAt,
+  };
+
+  const patchResponse = await fetch(tableUrl, {
+    method: "PATCH",
+    headers: getHeaders(),
+    body: JSON.stringify(patchPayload),
+  });
+
+  if (!patchResponse.ok) {
+    const text = await patchResponse.text();
+    throw new Error(`NocoDB update email template failed: ${patchResponse.status} - ${text}`);
+  }
+
+  return fields;
+}
+
+export async function appendEmailTemplateLogInNocoDB(fields: Record<string, unknown>) {
+  const tableId = assertEnv("NOCODB_LOG_EMAIL_TEMPLATES_TABLE", NOCODB_LOG_EMAIL_TEMPLATES_TABLE);
+  const response = await fetch(getTableUrl(tableId), {
+    method: "POST",
+    headers: getHeaders(),
+    body: JSON.stringify(fields),
+  });
+
+  if (!response.ok) {
+    const text = await response.text();
+    throw new Error(`NocoDB log email template failed: ${response.status} - ${text}`);
+  }
 }
 
 async function getOneDriveAccessToken() {

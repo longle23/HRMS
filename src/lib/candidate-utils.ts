@@ -116,6 +116,41 @@ Human Resource Department`,
   };
 }
 
+export const defaultMailBuilders = {
+  reject: buildRejectMail,
+  invite_interview: buildInterviewInviteMail,
+  onboard: buildOnboardMail,
+};
+
+export type EmailTemplateKey = keyof typeof defaultMailBuilders;
+
+export type EmailTemplate = {
+  key: EmailTemplateKey;
+  subject: string;
+  body: string;
+  updateBy?: string;
+  updateAt?: string;
+};
+
+export function interpolateTemplate(template: string, params: Record<string, string>) {
+  return template.replace(/\{(\w+)\}/g, (_, key: string) => params[key] ?? `{${key}}`);
+}
+
+export function buildMailFromTemplate(
+  template: EmailTemplate | null | undefined,
+  fallback: ReturnType<(typeof defaultMailBuilders)[EmailTemplateKey]>,
+  params: Record<string, string>,
+) {
+  if (!template?.subject || !template?.body) {
+    return fallback;
+  }
+
+  return {
+    subject: interpolateTemplate(template.subject, params),
+    body: interpolateTemplate(template.body, params),
+  };
+}
+
 export function toMailTargets(to: string, subject: string, body: string) {
   const encodedTo = encodeURIComponent(to);
   const encodedSubject = encodeURIComponent(subject);

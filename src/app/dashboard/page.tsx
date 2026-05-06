@@ -6,7 +6,11 @@ import {
   buildInterviewInviteMail,
   buildOnboardMail,
   buildRejectMail,
+  buildMailFromTemplate,
+  defaultMailBuilders,
   toMailTargets,
+  type EmailTemplate,
+  type EmailTemplateKey,
 } from "@/lib/candidate-utils";
 import type { AccountUser, Candidate, CandidateAction } from "@/types/hr";
 
@@ -33,6 +37,27 @@ function displayValue(value: unknown) {
   return !text || text.toLowerCase() === "none" ? "-" : text;
 }
 
+function formatDate(value: unknown) {
+  if (!value) return "-";
+  const date = new Date(String(value));
+  if (Number.isNaN(date.getTime())) return String(value);
+  return new Intl.DateTimeFormat("vi-VN", { day: "2-digit", month: "2-digit", year: "numeric" }).format(date);
+}
+
+function formatDateTime(value: unknown) {
+  if (!value) return "-";
+  const date = new Date(String(value));
+  if (Number.isNaN(date.getTime())) return String(value);
+  return new Intl.DateTimeFormat("vi-VN", {
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+  }).format(date);
+}
+
 function readSessionUser() {
   if (typeof window === "undefined") return null;
   const raw = window.localStorage.getItem("hrms_session_user");
@@ -54,6 +79,11 @@ export default function DashboardPage() {
   const [sessionUser, setSessionUser] = useState<AccountUser | null>(null);
   const [pendingAction, setPendingAction] = useState<PendingAction>(null);
   const [selectedCandidate, setSelectedCandidate] = useState<CandidateDetail>(null);
+  const [templates, setTemplates] = useState<Record<string, EmailTemplate>>({});
+  const [templateManagerOpen, setTemplateManagerOpen] = useState(false);
+  const [templateDraft, setTemplateDraft] = useState<EmailTemplate | null>(null);
+  const [templateSaving, setTemplateSaving] = useState(false);
+  const [saveNotice, setSaveNotice] = useState<string | null>(null);
   const isRejected = (status: string) => status === "rejected";
   const isInvited = (status: string) => status === "interview_invited";
 
@@ -98,6 +128,27 @@ export default function DashboardPage() {
     return () => window.clearInterval(intervalId);
   }, [sessionUser]);
 
+  useEffect(() => {
+    if (!sessionUser) return;
+
+    async function loadTemplates() {
+      try {
+        const response = await fetch("/api/email-templates", { cache: "no-store" });
+        const data = (await response.json()) as { templates?: EmailTemplate[]; error?: string };
+        if (!response.ok) throw new Error(data.error ?? "Không thể tải template email.");
+        const nextTemplates: Record<string, EmailTemplate> = {};
+        for (const template of data.templates ?? []) {
+          nextTemplates[template.key] = template;
+        }
+        setTemplates(nextTemplates);
+      } catch (error) {
+        console.error(error);
+      }
+    }
+
+    void loadTemplates();
+  }, [sessionUser]);
+
   const filteredCandidates = useMemo(() => {
     const term = search.trim().toLowerCase();
     if (!term) return candidates;
@@ -110,20 +161,67 @@ export default function DashboardPage() {
     setSessionUser(null);
     setCandidates([]);
     setSearch("");
+    setTemplates({});
     window.localStorage.removeItem("hrms_session_user");
     window.location.replace("/login");
+  }
+
+  function openTemplateManager() {
+    setTemplateManagerOpen(true);
+    setTemplateDraft(null);
+    setSaveNotice(null);
+  }
+
+  function openTemplateEditor(action: CandidateAction) {
+    const fallback = defaultMailBuilders[action]({ candidateName: "{candidateName}", position: "{position}" });
+    setTemplateDraft(templates[action] ?? { key: action, subject: fallback.subject, body: fallback.body });
+    setSaveNotice(null);
+  }
+
+  async function saveTemplate() {
+    if (!templateDraft || !sessionUser) return;
+    try {
+      setTemplateSaving(true);
+      const payload = {
+        ...templateDraft,
+        updateBy: sessionUser.fullName || sessionUser.username,
+        updateAt: new Date().toISOString(),
+      };
+      const response = await fetch("/api/email-templates", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      const data = (await response.json()) as { template?: EmailTemplate; error?: string };
+      if (!response.ok) throw new Error(data.error ?? "Lưu template thất bại.");
+      if (data.template) {
+        setTemplates((prev) => ({ ...prev, [data.template!.key]: data.template! }));
+        setTemplateDraft(data.template);
+        setSaveNotice(`Đã lưu template ${data.template.key} bởi ${(data.template.updateBy ?? sessionUser.fullName) || sessionUser.username} lúc ${formatDateTime(data.template.updateAt ?? payload.updateAt)}.`);
+      }
+    } catch (error) {
+      alert(error instanceof Error ? error.message : "Lưu template thất bại.");
+    } finally {
+      setTemplateSaving(false);
+    }
   }
 
   async function executeCandidateAction(candidate: Candidate, action: CandidateAction) {
     if (!sessionUser) return alert("Vui lòng đăng nhập.");
     if (!candidate.email) return alert("Ứng viên chưa có email.");
 
-    const mail =
+    const params = { candidateName: candidate.name, position: candidate.position };
+    const fallback =
       action === "reject"
-        ? buildRejectMail({ candidateName: candidate.name, position: candidate.position })
+        ? buildRejectMail(params)
         : action === "onboard"
-          ? buildOnboardMail({ candidateName: candidate.name, position: candidate.position })
-          : buildInterviewInviteMail({ candidateName: candidate.name, position: candidate.position });
+          ? buildOnboardMail(params)
+          : buildInterviewInviteMail(params);
+    const mail = buildMailFromTemplate(templates[action], fallback, {
+      candidateName: candidate.name,
+      position: candidate.position,
+      companyName: "SOTRANS LOGISTICS",
+    });
 
     window.location.href = toMailTargets(candidate.email, mail.subject, mail.body).mailto;
 
@@ -195,6 +293,7 @@ export default function DashboardPage() {
             </div>
             <button onClick={() => setSearch("")} className="rounded-lg border border-indigo-300 px-3 py-2 text-xs font-semibold text-indigo-700 transition hover:bg-indigo-50">Xóa lọc</button>
             <button onClick={() => void loadCandidates()} className="rounded-lg bg-gradient-to-r from-orange-500 via-amber-500 to-rose-500 px-3 py-2 text-xs font-semibold text-white transition hover:from-orange-400 hover:via-amber-400 hover:to-rose-400">Tải lại dữ liệu</button>
+            <button onClick={openTemplateManager} className="rounded-lg bg-gradient-to-r from-indigo-600 via-blue-600 to-cyan-600 px-3 py-2 text-xs font-semibold text-white transition hover:from-indigo-500 hover:via-blue-500 hover:to-cyan-500">Format mail</button>
           </div>
         </section>
 
@@ -349,6 +448,95 @@ export default function DashboardPage() {
           </div>
         );
       })() : null}
+
+      {templateManagerOpen ? (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-slate-950/55 p-3 backdrop-blur-sm">
+          <div className="flex max-h-[92vh] w-full max-w-4xl flex-col overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-2xl">
+            <div className="flex items-start justify-between gap-4 border-b border-slate-100 px-5 py-4">
+              <div className="flex-1 text-center">
+                <p className="text-[10px] font-semibold uppercase tracking-[0.22em] text-indigo-500">Email templates</p>
+                <h3 className="mt-1 text-xl font-bold text-slate-900">CHỈNH SỬA NỘI DUNG EMAIL</h3>
+                {/* <p className="mt-1 text-sm text-slate-500">Chỉ hiển thị 3 mẫu cố định, bấm để sửa.</p> */}
+              </div>
+              <button onClick={() => setTemplateManagerOpen(false)} className="rounded-full border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-600 transition hover:bg-slate-50">
+                Đóng
+              </button>
+            </div>
+            <div className="flex-1 overflow-y-auto px-5 py-6">
+              {!templateDraft ? (
+                <div className="grid items-stretch gap-4 sm:grid-cols-3">
+                  {(["reject", "invite_interview", "onboard"] as EmailTemplateKey[]).map((key) => {
+                    const item = templates[key];
+                    const fallback = defaultMailBuilders[key]({ candidateName: "{candidateName}", position: "{position}" });
+                    const palette =
+                      key === "reject"
+                        ? "from-rose-500 via-pink-500 to-fuchsia-600"
+                        : key === "invite_interview"
+                          ? "from-emerald-500 via-teal-500 to-cyan-600"
+                          : "from-indigo-500 via-blue-500 to-sky-600";
+                    return (
+                      <button key={key} onClick={() => openTemplateEditor(key)} className="group flex min-h-[230px] flex-col items-center justify-center rounded-3xl border border-slate-200 bg-gradient-to-br from-white via-slate-50 to-slate-100 p-5 text-center transition hover:-translate-y-0.5 hover:border-transparent hover:shadow-lg">
+                        <div className={`inline-flex w-fit items-center gap-2 rounded-full bg-gradient-to-r ${palette} px-4 py-1.5 text-[10px] font-semibold uppercase tracking-[0.24em] text-white shadow-sm`}>
+                          <span className="h-1.5 w-1.5 rounded-full bg-white/90" />
+                          {key}
+                        </div>
+                        <p className="mt-4 line-clamp-2 text-base font-semibold leading-7 text-slate-900">{item?.subject || fallback.subject}</p>
+                        <div className="mt-4 space-y-1 text-[11px] text-slate-500">
+                          <div>Cập nhật gần nhất</div>
+                          <div>Người sửa: <span className="font-semibold text-slate-700">{item?.updateBy ?? "-"}</span></div>
+                          <div>Ngày: <span className="font-semibold text-slate-700">{item?.updateAt ? formatDate(item.updateAt) : "-"}</span></div>
+                        </div>
+                        <div className={`mt-5 inline-flex items-center rounded-full bg-gradient-to-r ${palette} px-4 py-2 text-xs font-semibold text-white shadow-sm transition group-hover:brightness-110`}>
+                          Chọn mẫu
+                        </div>
+                      </button>
+                    );
+                  })}
+                </div>
+              ) : (
+                <div className="space-y-4">
+                  <div className="flex items-center justify-between gap-3">
+                    <button onClick={() => setTemplateDraft(null)} className="text-sm font-semibold text-indigo-700 hover:underline">← Quay lại</button>
+                    <span className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-semibold uppercase tracking-wide text-slate-500">{templateDraft.key}</span>
+                  </div>
+                  <div className="grid gap-5 lg:grid-cols-[0.72fr_1.28fr] xl:grid-cols-[0.68fr_1.32fr]">
+                    <div className="space-y-4 rounded-2xl border border-slate-100 bg-gradient-to-br from-slate-50 to-white p-4">
+                      <div>
+                        <label className="mb-2 block text-sm font-semibold text-slate-700">Subject</label>
+                        <input value={templateDraft.subject} onChange={(e) => setTemplateDraft({ ...templateDraft, subject: e.target.value })} className="w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm outline-none transition focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100" />
+                      </div>
+                      <div className="rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-600">
+                        <div className="font-semibold text-slate-700">Cập nhật gần nhất</div>
+                        <div className="mt-2 space-y-1">
+                          <div>Người sửa: <span className="font-semibold text-slate-800">{templateDraft.updateBy ?? "-"}</span></div>
+                          <div>Ngày: <span className="font-semibold text-slate-800">{formatDate(templateDraft.updateAt)}</span></div>
+                        </div>
+                      </div>
+                      {saveNotice ? <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">{saveNotice}</div> : null}
+                      <div className="rounded-xl border border-dashed border-slate-200 bg-gradient-to-r from-indigo-50 to-cyan-50 p-4 text-sm text-slate-600">
+                        Biến hỗ trợ: <span className="font-semibold">{`{candidateName}`}</span>, <span className="font-semibold">{`{position}`}</span>, <span className="font-semibold">{`{companyName}`}</span>
+                      </div>
+                    </div>
+                    <div className="space-y-4 rounded-2xl border border-slate-100 bg-white p-4">
+                      <div>
+                        <label className="mb-2 block text-sm font-semibold text-slate-700">Body</label>
+                        <textarea value={templateDraft.body} onChange={(e) => setTemplateDraft({ ...templateDraft, body: e.target.value })} rows={18} className="w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm leading-6 outline-none transition focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100" />
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+            {templateDraft ? (
+              <div className="sticky bottom-0 flex items-center justify-end gap-3 border-t border-slate-100 bg-white px-5 py-4">
+                <button onClick={() => void saveTemplate()} disabled={templateSaving} className="rounded-xl bg-indigo-600 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-indigo-500 disabled:opacity-60">
+                  {templateSaving ? "Đang lưu..." : "Lưu template"}
+                </button>
+              </div>
+            ) : null}
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }
