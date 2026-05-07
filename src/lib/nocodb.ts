@@ -44,18 +44,34 @@ function parseListPayload(payload: unknown): AnyRecord[] {
 
 export async function getCandidatesFromNocoDB() {
   const tableId = assertEnv("NOCODB_CANDIDATES_TABLE", NOCODB_CANDIDATES_TABLE);
-  const response = await fetch(getTableUrl(tableId), {
-    headers: getHeaders(),
-    cache: "no-store",
-  });
+  const pageSize = 100;
+  const allRecords: AnyRecord[] = [];
 
-  if (!response.ok) {
-    const text = await response.text();
-    throw new Error(`NocoDB fetch candidates failed: ${response.status} - ${text}`);
+  for (let offset = 0; ; offset += pageSize) {
+    const url = new URL(getTableUrl(tableId));
+    url.searchParams.set("limit", String(pageSize));
+    url.searchParams.set("offset", String(offset));
+
+    const response = await fetch(url, {
+      headers: getHeaders(),
+      cache: "no-store",
+    });
+
+    if (!response.ok) {
+      const text = await response.text();
+      throw new Error(`NocoDB fetch candidates failed: ${response.status} - ${text}`);
+    }
+
+    const data = (await response.json()) as unknown;
+    const records = parseListPayload(data);
+    allRecords.push(...records);
+
+    if (records.length < pageSize) {
+      break;
+    }
   }
 
-  const data = (await response.json()) as unknown;
-  return parseListPayload(data);
+  return allRecords;
 }
 
 export async function updateCandidateInNocoDB(candidateId: string, fields: Record<string, unknown>) {

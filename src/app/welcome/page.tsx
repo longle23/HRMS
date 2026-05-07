@@ -43,11 +43,11 @@ export default function WelcomePage() {
             <h1 className="mt-4 text-4xl font-black tracking-tight text-slate-900 sm:text-5xl lg:text-6xl">
               Chào mừng đến
               <span className="block bg-gradient-to-r from-indigo-600 via-sky-600 to-cyan-600 bg-clip-text text-transparent">
-                hệ thống HRMS
+                hệ thống TA
               </span>
             </h1>
             <p className="mt-4 max-w-4xl text-base leading-8 text-slate-600 sm:text-lg">
-              Từ đây bạn có thể nhanh chóng chuyển sang trang ứng viên hoặc JD để theo dõi công việc và thao tác.
+              Từ đây bạn có thể chuyển sang trang ứng viên hoặc JD để theo dõi công việc và thao tác.
             </p>
 
             <div className="mt-8 w-full max-w-3xl rounded-[28px] border border-indigo-100 bg-gradient-to-br from-indigo-50 via-white to-cyan-50 p-5 shadow-sm md:p-7">

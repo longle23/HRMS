@@ -79,8 +79,8 @@ export default function LoginPage() {
               priority
             />
           </div>
-          <p className="text-center text-xs uppercase tracking-[0.28em] text-indigo-500">HR Internal Login</p>
-          <h1 className="mt-3 text-center text-2xl font-bold text-slate-800">Đăng nhập hệ thống HR</h1>
+          <p className="text-center text-xs uppercase tracking-[0.28em] text-indigo-500">HR TA Internal Login</p>
+          <h1 className="mt-3 text-center text-2xl font-bold text-slate-800">Đăng nhập hệ thống</h1>
           <p className="mt-2 text-center text-sm text-slate-600">
             Vui lòng đăng nhập để thao tác hồ sơ ứng viên.
           </p>

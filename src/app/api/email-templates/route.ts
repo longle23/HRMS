@@ -4,11 +4,16 @@ import {
   getEmailTemplateFromNocoDB,
   updateEmailTemplateInNocoDB,
 } from "@/lib/nocodb";
-import type { EmailTemplate } from "@/lib/candidate-utils";
+import type { EmailTemplate, EmailTemplateKey } from "@/lib/candidate-utils";
 
-type EmailTemplateKey = "reject" | "invite_interview" | "onboard";
-
-const allowedKeys: EmailTemplateKey[] = ["reject", "invite_interview", "onboard"];
+const allowedKeys: EmailTemplateKey[] = [
+  "reject_en",
+  "reject_vi",
+  "invite_interview_en",
+  "invite_interview_vi",
+  "onboard_en",
+  "onboard_vi",
+];
 
 function isTemplateKey(value: unknown): value is EmailTemplateKey {
   return typeof value === "string" && allowedKeys.includes(value as EmailTemplateKey);
@@ -43,14 +48,18 @@ export async function PUT(request: NextRequest) {
   try {
     const body = (await request.json()) as { key?: unknown; subject?: unknown; body?: unknown; updateBy?: unknown; updateAt?: unknown };
 
-    if (!isTemplateKey(body.key) || typeof body.subject !== "string" || typeof body.body !== "string") {
+    const key = typeof body.key === "string" ? body.key.trim() : "";
+    const subject = typeof body.subject === "string" ? body.subject.trim() : "";
+    const templateBody = typeof body.body === "string" ? body.body : "";
+
+    if (!isTemplateKey(key) || !subject || !templateBody) {
       return NextResponse.json({ error: "Invalid template payload." }, { status: 400 });
     }
 
     const payload = {
-      key: body.key,
-      subject: body.subject,
-      body: body.body,
+      key,
+      subject,
+      body: templateBody,
       updateBy: typeof body.updateBy === "string" ? body.updateBy : "",
       updateAt: typeof body.updateAt === "string" ? body.updateAt : new Date().toISOString(),
     };

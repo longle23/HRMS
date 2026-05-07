@@ -8,14 +8,18 @@ import {
   buildRejectMail,
   buildMailFromTemplate,
   defaultMailBuilders,
+  supportedCandidateMailTypes,
+  supportedMailLanguages,
   toMailTargets,
+  type CandidateMailType,
   type EmailTemplate,
   type EmailTemplateKey,
+  type MailLanguage,
 } from "@/lib/candidate-utils";
 import type { AccountUser, Candidate, CandidateAction } from "@/types/hr";
 
 type LoadState = "idle" | "loading" | "error";
-type PendingAction = { candidate: Candidate; action: CandidateAction } | null;
+type PendingAction = { candidate: Candidate; action: CandidateAction; language: MailLanguage | null } | null;
 type CandidateDetail = Candidate | null;
 
 const statusBadgeMap: Record<string, string> = {
@@ -55,7 +59,19 @@ function formatDateTime(value: unknown) {
     hour: "2-digit",
     minute: "2-digit",
     second: "2-digit",
+    hour12: false,
+    timeZone: "Asia/Ho_Chi_Minh",
   }).format(date);
+}
+
+function getCandidateApplyTime(candidate: Candidate) {
+  const value = candidate.applyTime ?? candidate.raw?.apply_time ?? candidate.raw?.ApplyTime ?? candidate.raw?.createdAt ?? candidate.raw?.created_at ?? "";
+  const date = new Date(String(value));
+  return Number.isNaN(date.getTime()) ? 0 : date.getTime();
+}
+
+function getCandidateApplyTimeDisplay(candidate: Candidate) {
+  return formatDateTime(candidate.applyTime ?? candidate.raw?.apply_time ?? candidate.raw?.ApplyTime ?? candidate.raw?.createdAt ?? candidate.raw?.created_at);
 }
 
 function readSessionUser() {
@@ -79,9 +95,12 @@ export default function DashboardPage() {
   const [sessionUser, setSessionUser] = useState<AccountUser | null>(null);
   const [pendingAction, setPendingAction] = useState<PendingAction>(null);
   const [selectedCandidate, setSelectedCandidate] = useState<CandidateDetail>(null);
+  const [currentPage, setCurrentPage] = useState(1);
   const [templates, setTemplates] = useState<Record<string, EmailTemplate>>({});
   const [templateManagerOpen, setTemplateManagerOpen] = useState(false);
   const [templateDraft, setTemplateDraft] = useState<EmailTemplate | null>(null);
+  const [templateEditingType, setTemplateEditingType] = useState<CandidateMailType | null>(null);
+  const [templateEditingLanguage, setTemplateEditingLanguage] = useState<MailLanguage>("vi");
   const [templateSaving, setTemplateSaving] = useState(false);
   const [saveNotice, setSaveNotice] = useState<string | null>(null);
   const isRejected = (status: string) => status === "rejected";
@@ -108,6 +127,7 @@ export default function DashboardPage() {
       const data = (await response.json()) as { candidates?: Candidate[]; error?: string };
       if (!response.ok) throw new Error(data.error ?? "Không thể tải danh sách ứng viên.");
       setCandidates(data.candidates ?? []);
+      setCurrentPage(1);
       if (!silent) setState("idle");
     } catch (error) {
       if (!silent) {
@@ -149,13 +169,51 @@ export default function DashboardPage() {
     void loadTemplates();
   }, [sessionUser]);
 
+  const sortedCandidates = useMemo(() => {
+    return [...candidates].sort((left, right) => getCandidateApplyTime(right) - getCandidateApplyTime(left));
+  }, [candidates]);
+
   const filteredCandidates = useMemo(() => {
     const term = search.trim().toLowerCase();
-    if (!term) return candidates;
-    return candidates.filter((candidate) => [candidate.name, candidate.email, candidate.position].join(" ").toLowerCase().includes(term));
-  }, [candidates, search]);
+    if (!term) return sortedCandidates;
+    return sortedCandidates.filter((candidate) => [candidate.name, candidate.position].join(" ").toLowerCase().includes(term));
+  }, [search, sortedCandidates]);
 
+  const itemsPerPage = 20;
+  const totalPages = Math.max(1, Math.ceil(filteredCandidates.length / itemsPerPage));
+  const safeCurrentPage = Math.min(currentPage, totalPages);
+  const pageStart = (safeCurrentPage - 1) * itemsPerPage;
+  const paginatedCandidates = filteredCandidates.slice(pageStart, pageStart + itemsPerPage);
   const visibleCandidateCount = filteredCandidates.length;
+
+  const paginationItems = useMemo(() => {
+    if (totalPages <= 7) {
+      return Array.from({ length: totalPages }, (_, index) => index + 1);
+    }
+
+    const items: Array<number | "…"> = [1];
+    const left = Math.max(2, safeCurrentPage - 1);
+    const right = Math.min(totalPages - 1, safeCurrentPage + 1);
+
+    if (left > 2) {
+      items.push("…");
+    }
+
+    for (let page = left; page <= right; page += 1) {
+      items.push(page);
+    }
+
+    if (right < totalPages - 1) {
+      items.push("…");
+    }
+
+    items.push(totalPages);
+    return items;
+  }, [safeCurrentPage, totalPages]);
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [search]);
 
   function handleLogout() {
     setSessionUser(null);
@@ -169,12 +227,31 @@ export default function DashboardPage() {
   function openTemplateManager() {
     setTemplateManagerOpen(true);
     setTemplateDraft(null);
+    setTemplateEditingType(null);
+    setTemplateEditingLanguage("vi");
     setSaveNotice(null);
   }
 
-  function openTemplateEditor(action: CandidateAction) {
-    const fallback = defaultMailBuilders[action]({ candidateName: "{candidateName}", position: "{position}" });
-    setTemplateDraft(templates[action] ?? { key: action, subject: fallback.subject, body: fallback.body });
+  function openTemplateEditor(action: CandidateMailType, language: MailLanguage) {
+    const templateKey = `${action}_${language}` as EmailTemplateKey;
+    const fallback = defaultMailBuilders[templateKey]({ candidateName: "{candidateName}", position: "{position}" });
+    setTemplateDraft(templates[templateKey] ?? { key: templateKey, subject: fallback.subject, body: fallback.body });
+    setTemplateEditingType(action);
+    setTemplateEditingLanguage(language);
+    setSaveNotice(null);
+  }
+
+  function closeTemplateEditor() {
+    setTemplateDraft(null);
+    setTemplateEditingType(null);
+  }
+
+  function switchTemplateLanguage(language: MailLanguage) {
+    if (!templateEditingType) return;
+    const templateKey = `${templateEditingType}_${language}` as EmailTemplateKey;
+    const fallback = defaultMailBuilders[templateKey]({ candidateName: "{candidateName}", position: "{position}" });
+    setTemplateDraft(templates[templateKey] ?? { key: templateKey, subject: fallback.subject, body: fallback.body });
+    setTemplateEditingLanguage(language);
     setSaveNotice(null);
   }
 
@@ -206,18 +283,19 @@ export default function DashboardPage() {
     }
   }
 
-  async function executeCandidateAction(candidate: Candidate, action: CandidateAction) {
+  async function executeCandidateAction(candidate: Candidate, action: CandidateAction, language: MailLanguage) {
     if (!sessionUser) return alert("Vui lòng đăng nhập.");
     if (!candidate.email) return alert("Ứng viên chưa có email.");
 
     const params = { candidateName: candidate.name, position: candidate.position };
+    const templateKey = `${action}_${language}` as EmailTemplateKey;
     const fallback =
       action === "reject"
-        ? buildRejectMail(params)
+        ? buildRejectMail(params, language)
         : action === "onboard"
-          ? buildOnboardMail(params)
-          : buildInterviewInviteMail(params);
-    const mail = buildMailFromTemplate(templates[action], fallback, {
+          ? buildOnboardMail(params, language)
+          : buildInterviewInviteMail(params, language);
+    const mail = buildMailFromTemplate(templates[templateKey], fallback, {
       candidateName: candidate.name,
       position: candidate.position,
       companyName: "SOTRANS LOGISTICS",
@@ -263,13 +341,18 @@ export default function DashboardPage() {
     }
   }
   function handleAction(candidate: Candidate, action: CandidateAction) {
-    setPendingAction({ candidate, action });
+    setPendingAction({ candidate, action, language: null });
+  }
+
+  function handleLanguageChoice(language: MailLanguage) {
+    if (!pendingAction) return;
+    setPendingAction({ ...pendingAction, language });
   }
 
   async function confirmPendingAction() {
-    if (!pendingAction) return;
-    const { candidate, action } = pendingAction;
-    await executeCandidateAction(candidate, action);
+    if (!pendingAction || !pendingAction.language) return;
+    const { candidate, action, language } = pendingAction;
+    await executeCandidateAction(candidate, action, language);
     setPendingAction(null);
   }
 
@@ -278,20 +361,23 @@ export default function DashboardPage() {
       <TopNav user={sessionUser ? { name: sessionUser.fullName || sessionUser.username } : null} onLogout={handleLogout} />
       <div className="mx-auto w-full max-w-7xl px-3 py-4 sm:px-4 lg:px-6">
         <section className="mt-3 rounded-2xl border border-indigo-200/70 bg-white/90 p-3 shadow-xl sm:p-4">
-          <div className="mb-3 flex items-center justify-between rounded-2xl border border-emerald-200 bg-emerald-50/70 px-4 py-3">
+          <div className="mb-3 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-emerald-200 bg-emerald-50/70 px-4 py-3">
             <div>
-              <p className="text-[10px] uppercase tracking-wide text-emerald-600">Đang hiển thị</p>
-              <p className="text-lg font-bold text-emerald-700">{visibleCandidateCount}</p>
+              <p className="text-[10px] uppercase tracking-wide text-emerald-600">Số lượng hiển thị</p>
+              <p className="text-lg font-bold text-emerald-700">{paginatedCandidates.length}</p>
             </div>
-            <p className="text-sm text-slate-600">Số lượng ứng viên</p>
+            <div className="text-right">
+              <p className="text-sm text-slate-600">Tổng ứng viên</p>
+              <p className="text-sm font-semibold text-slate-800">{visibleCandidateCount} ứng viên</p>
+            </div>
           </div>
 
           <div className="flex flex-wrap items-end gap-3">
             <div className="min-w-0 flex-1">
-              <label className="block text-xs font-medium text-slate-600">Tìm kiếm ứng viên (Họ tên, email, vị trí)</label>
-              <input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Nhập tên, email hoặc vị trí ứng tuyển..." className="mt-1 w-full rounded-lg border border-indigo-200 bg-white px-3 py-2 text-sm outline-none ring-indigo-400 transition placeholder:text-slate-400 focus:ring-2" />
+              <label className="block text-xs font-medium text-slate-600">Tìm kiếm ứng viên (Họ tên, vị trí)</label>
+              <input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Nhập tên hoặc vị trí ứng tuyển..." className="mt-1 w-full rounded-lg border border-indigo-200 bg-white px-3 py-2 text-sm outline-none ring-indigo-400 transition placeholder:text-slate-400 focus:ring-2" />
             </div>
-            <button onClick={() => setSearch("")} className="rounded-lg border border-indigo-300 px-3 py-2 text-xs font-semibold text-indigo-700 transition hover:bg-indigo-50">Xóa lọc</button>
+            <button onClick={() => { setSearch(""); setCurrentPage(1); }} className="rounded-lg border border-indigo-300 px-3 py-2 text-xs font-semibold text-indigo-700 transition hover:bg-indigo-50">Xóa lọc</button>
             <button onClick={() => void loadCandidates()} className="rounded-lg bg-gradient-to-r from-orange-500 via-amber-500 to-rose-500 px-3 py-2 text-xs font-semibold text-white transition hover:from-orange-400 hover:via-amber-400 hover:to-rose-400">Tải lại dữ liệu</button>
             <button onClick={openTemplateManager} className="rounded-lg bg-gradient-to-r from-indigo-600 via-blue-600 to-cyan-600 px-3 py-2 text-xs font-semibold text-white transition hover:from-indigo-500 hover:via-blue-500 hover:to-cyan-500">Format mail</button>
           </div>
@@ -306,12 +392,12 @@ export default function DashboardPage() {
           <div className="overflow-x-auto rounded-xl border border-indigo-200 bg-white/95">
             <div className="min-w-[1120px]">
               <div className="grid grid-cols-[1fr_1.2fr_0.9fr_0.8fr_1fr_1.3fr] gap-3 border-b border-indigo-200 bg-indigo-50 px-3 py-2 text-[11px] font-semibold uppercase tracking-wide text-slate-700">
-                <span>Họ tên</span><span>Email</span><span>Vị trí</span><span>Trạng thái</span><span>Người thao tác gần nhất</span><span>Thao tác</span>
+                <span>Họ tên</span><span>Thời gian apply</span><span>Vị trí</span><span>Trạng thái</span><span>Người thao tác gần nhất</span><span>Thao tác</span>
               </div>
-              {filteredCandidates.map((candidate) => (
+              {paginatedCandidates.map((candidate) => (
                 <article key={candidate.id} className="grid grid-cols-[1fr_1.2fr_0.9fr_0.8fr_1fr_1.3fr] items-center gap-3 border-b border-indigo-100 px-3 py-2 text-sm transition hover:bg-indigo-50/70">
                   <button onClick={() => setSelectedCandidate(candidate)} className="truncate text-left font-medium text-slate-800 hover:underline">{candidate.name}</button>
-                  <p className="truncate text-slate-600">{candidate.email || "No email"}</p>
+                  <p className="truncate text-slate-600">{getCandidateApplyTimeDisplay(candidate)}</p>
                   <p className="truncate text-slate-600">{candidate.position}</p>
                   <span className={`w-fit rounded-full border px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${statusBadgeMap[candidate.status] ?? "border-slate-600 bg-slate-800 text-slate-200"}`}>{renderStatusLabel(candidate.status)}</span>
                   <p className="truncate text-slate-600">{displayValue(candidate.lastActionBy)}</p>
@@ -324,6 +410,80 @@ export default function DashboardPage() {
               ))}
             </div>
           </div>
+
+          {filteredCandidates.length > 0 ? (
+            <div className="mt-4 overflow-hidden rounded-3xl border border-slate-200 bg-white/90 shadow-[0_18px_50px_-28px_rgba(15,23,42,0.35)]">
+              <div className="h-1 bg-gradient-to-r from-indigo-600 via-blue-600 to-cyan-500" />
+              <div className="flex flex-col gap-4 px-4 py-4 sm:flex-row sm:items-center sm:justify-between">
+                <div>
+                  <p className="text-[10px] font-semibold uppercase tracking-[0.22em] text-indigo-500">Phân trang</p>
+                  <div className="mt-1 flex flex-wrap items-center gap-2 text-sm text-slate-600">
+                    <span className="rounded-full bg-indigo-50 px-3 py-1 font-semibold text-indigo-700">Trang {safeCurrentPage}</span>
+                    <span>/</span>
+                    <span className="font-semibold text-slate-800">{totalPages}</span>
+                    <span className="hidden sm:inline">•</span>
+                    <span className="rounded-full bg-slate-100 px-3 py-1 font-medium text-slate-700">{paginatedCandidates.length} trên {visibleCandidateCount}</span>
+                  </div>
+                </div>
+                <div className="flex flex-wrap items-center gap-2">
+                  <button
+                    onClick={() => setCurrentPage(1)}
+                    disabled={safeCurrentPage === 1}
+                    className="hidden inline-flex items-center gap-2 rounded-xl border border-slate-300 bg-white px-2.5 py-1.5 text-xs font-semibold text-slate-700 transition hover:-translate-y-0.5 hover:border-indigo-300 hover:bg-indigo-50 disabled:cursor-not-allowed disabled:opacity-40 sm:inline-flex"
+                  >
+                    Đầu
+                  </button>
+                  <button
+                    onClick={() => setCurrentPage((page) => Math.max(1, page - 1))}
+                    disabled={safeCurrentPage === 1}
+                    className="inline-flex items-center gap-2 rounded-xl border border-slate-300 bg-white px-2.5 py-1.5 text-xs font-semibold text-slate-700 transition hover:-translate-y-0.5 hover:border-indigo-300 hover:bg-indigo-50 disabled:cursor-not-allowed disabled:opacity-40"
+                  >
+                    Trước
+                  </button>
+                  <div className="flex max-w-full items-center gap-1 overflow-x-auto rounded-2xl border border-slate-200 bg-slate-50 px-2 py-1.5 shadow-inner">
+                    {paginationItems.map((page, index) => {
+                      if (page === "…") {
+                        return (
+                          <span key={`ellipsis-${index}`} className="px-1.5 text-xs font-semibold text-slate-400">
+                            …
+                          </span>
+                        );
+                      }
+
+                      const isActive = page === safeCurrentPage;
+                      return (
+                        <button
+                          key={page}
+                          onClick={() => setCurrentPage(page)}
+                          className={`min-w-8 rounded-lg px-2.5 py-1.5 text-xs font-semibold transition ${
+                            isActive
+                              ? "bg-gradient-to-r from-indigo-600 to-cyan-600 text-white shadow-md"
+                              : "text-slate-600 hover:bg-white hover:text-indigo-700"
+                          }`}
+                        >
+                          {page}
+                        </button>
+                      );
+                    })}
+                  </div>
+                  <button
+                    onClick={() => setCurrentPage((page) => Math.min(totalPages, page + 1))}
+                    disabled={safeCurrentPage === totalPages}
+                    className="inline-flex items-center gap-2 rounded-xl border border-slate-300 bg-white px-2.5 py-1.5 text-xs font-semibold text-slate-700 transition hover:-translate-y-0.5 hover:border-indigo-300 hover:bg-indigo-50 disabled:cursor-not-allowed disabled:opacity-40"
+                  >
+                    Sau
+                  </button>
+                  <button
+                    onClick={() => setCurrentPage(totalPages)}
+                    disabled={safeCurrentPage === totalPages}
+                    className="hidden inline-flex items-center gap-2 rounded-xl border border-slate-300 bg-white px-2.5 py-1.5 text-xs font-semibold text-slate-700 transition hover:-translate-y-0.5 hover:border-indigo-300 hover:bg-indigo-50 disabled:cursor-not-allowed disabled:opacity-40 sm:inline-flex"
+                  >
+                    Cuối
+                  </button>
+                </div>
+              </div>
+            </div>
+          ) : null}
         </section>
       </div>
 
@@ -349,7 +509,7 @@ export default function DashboardPage() {
                   <div className="rounded-3xl border border-indigo-100 bg-gradient-to-br from-indigo-50/80 to-white p-5 shadow-sm">
                     <p className="text-[10px] font-semibold uppercase tracking-wide text-indigo-500">Tổng quan</p>
                     <div className="mt-4 grid gap-3 sm:grid-cols-2">
-                      {[["Họ và tên", selectedCandidate.name], ["Email", selectedCandidate.email], ["Vị trí ứng tuyển", selectedCandidate.position], ["Nguồn ứng tuyển", selectedCandidate.candidateSource]].map(([label, value]) => (
+                      {[["Họ và tên", selectedCandidate.name], ["Email", selectedCandidate.email], ["Vị trí ứng tuyển", selectedCandidate.position], ["Nguồn ứng tuyển", selectedCandidate.candidateSource], ["Thời gian apply", getCandidateApplyTimeDisplay(selectedCandidate)]].map(([label, value]) => (
                         <div key={label} className="rounded-2xl border border-slate-200 bg-white px-4 py-3">
                           <p className="text-[10px] font-semibold uppercase tracking-wide text-indigo-500">{label}</p>
                           <p className="mt-2 text-sm leading-6 text-slate-800">{displayValue(value)}</p>
@@ -437,9 +597,33 @@ export default function DashboardPage() {
                 <div className="mt-6 rounded-2xl border border-slate-100 bg-slate-50/80 p-4 text-sm leading-6 text-slate-600">
                   Hành động này sẽ cập nhật trạng thái hồ sơ và gửi email tương ứng cho ứng viên.
                 </div>
+                <div className="mt-6">
+                  <p className="text-sm font-semibold text-slate-700">Chọn ngôn ngữ email</p>
+                  <div className="mt-3 grid gap-3 sm:grid-cols-2">
+                    {([
+                      { id: "vi", label: "Tiếng Việt" },
+                      { id: "en", label: "Tiếng Anh" },
+                    ] as const).map((option) => {
+                      const isActive = pendingAction.language === option.id;
+                      return (
+                        <button
+                          key={option.id}
+                          onClick={() => handleLanguageChoice(option.id)}
+                          className={`rounded-2xl border px-4 py-3 text-sm font-semibold transition ${
+                            isActive
+                              ? "border-indigo-500 bg-indigo-50 text-indigo-700"
+                              : "border-slate-200 bg-white text-slate-700 hover:border-indigo-300 hover:bg-indigo-50"
+                          }`}
+                        >
+                          {option.label}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
                 <div className="mt-7 flex items-center justify-between gap-3">
                   <button onClick={() => setPendingAction(null)} disabled={Boolean(savingId)} className="rounded-2xl border border-slate-300 bg-white px-5 py-3 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 disabled:opacity-60">Hủy</button>
-                  <button onClick={() => void confirmPendingAction()} disabled={Boolean(savingId)} className={`rounded-2xl bg-gradient-to-r ${modalConfig.accent} px-5 py-3 text-sm font-semibold text-white shadow-lg transition hover:brightness-110 disabled:opacity-60`}>
+                  <button onClick={() => void confirmPendingAction()} disabled={Boolean(savingId) || !pendingAction.language} className={`rounded-2xl bg-gradient-to-r ${modalConfig.accent} px-5 py-3 text-sm font-semibold text-white shadow-lg transition hover:brightness-110 disabled:opacity-60`}>
                     {savingId ? "Đang xử lý..." : modalConfig.buttonLabel}
                   </button>
                 </div>
@@ -456,7 +640,6 @@ export default function DashboardPage() {
               <div className="flex-1 text-center">
                 <p className="text-[10px] font-semibold uppercase tracking-[0.22em] text-indigo-500">Email templates</p>
                 <h3 className="mt-1 text-xl font-bold text-slate-900">CHỈNH SỬA NỘI DUNG EMAIL</h3>
-                {/* <p className="mt-1 text-sm text-slate-500">Chỉ hiển thị 3 mẫu cố định, bấm để sửa.</p> */}
               </div>
               <button onClick={() => setTemplateManagerOpen(false)} className="rounded-full border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-600 transition hover:bg-slate-50">
                 Đóng
@@ -464,10 +647,8 @@ export default function DashboardPage() {
             </div>
             <div className="flex-1 overflow-y-auto px-5 py-6">
               {!templateDraft ? (
-                <div className="grid items-stretch gap-4 sm:grid-cols-3">
-                  {(["reject", "invite_interview", "onboard"] as EmailTemplateKey[]).map((key) => {
-                    const item = templates[key];
-                    const fallback = defaultMailBuilders[key]({ candidateName: "{candidateName}", position: "{position}" });
+                <div className="grid gap-5 xl:grid-cols-3">
+                  {supportedCandidateMailTypes.map((key) => {
                     const palette =
                       key === "reject"
                         ? "from-rose-500 via-pink-500 to-fuchsia-600"
@@ -475,18 +656,24 @@ export default function DashboardPage() {
                           ? "from-emerald-500 via-teal-500 to-cyan-600"
                           : "from-indigo-500 via-blue-500 to-sky-600";
                     return (
-                      <button key={key} onClick={() => openTemplateEditor(key)} className="group flex min-h-[230px] flex-col items-center justify-center rounded-3xl border border-slate-200 bg-gradient-to-br from-white via-slate-50 to-slate-100 p-5 text-center transition hover:-translate-y-0.5 hover:border-transparent hover:shadow-lg">
-                        <div className={`inline-flex w-fit items-center gap-2 rounded-full bg-gradient-to-r ${palette} px-4 py-1.5 text-[10px] font-semibold uppercase tracking-[0.24em] text-white shadow-sm`}>
-                          <span className="h-1.5 w-1.5 rounded-full bg-white/90" />
-                          {key}
+                      <button
+                        key={key}
+                        onClick={() => openTemplateEditor(key, "vi")}
+                        className="group flex min-h-[240px] flex-col justify-between rounded-3xl border border-slate-200 bg-gradient-to-br from-white via-slate-50 to-slate-100 p-5 text-left transition hover:-translate-y-0.5 hover:border-transparent hover:shadow-lg"
+                      >
+                        <div>
+                          <div className={`inline-flex w-fit items-center gap-2 rounded-full bg-gradient-to-r ${palette} px-4 py-1.5 text-[10px] font-semibold uppercase tracking-[0.24em] text-white shadow-sm`}>
+                            <span className="h-1.5 w-1.5 rounded-full bg-white/90" />
+                            {key}
+                          </div>
+                          <p className="mt-5 text-lg font-bold leading-7 text-slate-900">
+                            {key === "reject" ? "Reject mail" : key === "invite_interview" ? "Invite interview mail" : "Onboard mail"}
+                          </p>
+                          <p className="mt-2 text-sm leading-6 text-slate-500">
+                            Chọn để mở form chỉnh sửa, bên trong sẽ có toggle Tiếng Việt / Tiếng Anh.
+                          </p>
                         </div>
-                        <p className="mt-4 line-clamp-2 text-base font-semibold leading-7 text-slate-900">{item?.subject || fallback.subject}</p>
-                        <div className="mt-4 space-y-1 text-[11px] text-slate-500">
-                          <div>Cập nhật gần nhất</div>
-                          <div>Người sửa: <span className="font-semibold text-slate-700">{item?.updateBy ?? "-"}</span></div>
-                          <div>Ngày: <span className="font-semibold text-slate-700">{item?.updateAt ? formatDate(item.updateAt) : "-"}</span></div>
-                        </div>
-                        <div className={`mt-5 inline-flex items-center rounded-full bg-gradient-to-r ${palette} px-4 py-2 text-xs font-semibold text-white shadow-sm transition group-hover:brightness-110`}>
+                        <div className={`mt-6 inline-flex items-center rounded-full bg-gradient-to-r ${palette} px-4 py-2 text-xs font-semibold text-white shadow-sm transition group-hover:brightness-110`}>
                           Chọn mẫu
                         </div>
                       </button>
@@ -496,8 +683,14 @@ export default function DashboardPage() {
               ) : (
                 <div className="space-y-4">
                   <div className="flex items-center justify-between gap-3">
-                    <button onClick={() => setTemplateDraft(null)} className="text-sm font-semibold text-indigo-700 hover:underline">← Quay lại</button>
-                    <span className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-semibold uppercase tracking-wide text-slate-500">{templateDraft.key}</span>
+                    <button onClick={closeTemplateEditor} className="text-sm font-semibold text-indigo-700 hover:underline">← Quay lại</button>
+                    <div className="flex items-center gap-2 rounded-full border border-slate-200 bg-slate-50 p-1 text-xs font-semibold">
+                      {supportedMailLanguages.map((language) => (
+                        <button key={language} onClick={() => switchTemplateLanguage(language)} className={`rounded-full px-3 py-1.5 transition ${templateEditingLanguage === language ? "bg-indigo-600 text-white" : "text-slate-600 hover:bg-white"}`}>
+                          {language === "vi" ? "Tiếng Việt" : "English"}
+                        </button>
+                      ))}
+                    </div>
                   </div>
                   <div className="grid gap-5 lg:grid-cols-[0.72fr_1.28fr] xl:grid-cols-[0.68fr_1.32fr]">
                     <div className="space-y-4 rounded-2xl border border-slate-100 bg-gradient-to-br from-slate-50 to-white p-4">
