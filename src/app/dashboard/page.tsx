@@ -45,23 +45,20 @@ function formatDate(value: unknown) {
   if (!value) return "-";
   const date = new Date(String(value));
   if (Number.isNaN(date.getTime())) return String(value);
-  return new Intl.DateTimeFormat("vi-VN", { day: "2-digit", month: "2-digit", year: "numeric" }).format(date);
+
+  const day = String(date.getDate()).padStart(2, "0");
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const year = date.getFullYear();
+  return `${day}/${month}/${year}`;
 }
 
 function formatDateTime(value: unknown) {
   if (!value) return "-";
   const date = new Date(String(value));
   if (Number.isNaN(date.getTime())) return String(value);
-  return new Intl.DateTimeFormat("vi-VN", {
-    day: "2-digit",
-    month: "2-digit",
-    year: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
-    second: "2-digit",
-    hour12: false,
-    timeZone: "Asia/Ho_Chi_Minh",
-  }).format(date);
+
+  const pad = (input: number) => String(input).padStart(2, "0");
+  return `${pad(date.getDate())}-${pad(date.getMonth() + 1)}-${date.getFullYear()} ${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`;
 }
 
 function getCandidateApplyTime(candidate: Candidate) {
@@ -222,6 +219,10 @@ export default function DashboardPage() {
     setTemplates({});
     window.localStorage.removeItem("hrms_session_user");
     window.location.replace("/login");
+  }
+
+  function getCandidateCvLink(candidate: Candidate) {
+    return candidate.cvLink ?? (typeof candidate.raw?.link === "string" ? candidate.raw.link : "") ?? "";
   }
 
   function openTemplateManager() {
@@ -391,20 +392,25 @@ export default function DashboardPage() {
 
           <div className="overflow-x-auto rounded-xl border border-indigo-200 bg-white/95">
             <div className="min-w-[1120px]">
-              <div className="grid grid-cols-[1fr_1.2fr_0.9fr_0.8fr_1fr_1.3fr] gap-3 border-b border-indigo-200 bg-indigo-50 px-3 py-2 text-[11px] font-semibold uppercase tracking-wide text-slate-700">
+              <div className="grid grid-cols-[0.9fr_1.05fr_0.85fr_0.75fr_0.95fr_1.3fr] gap-2 border-b border-indigo-200 bg-indigo-50 px-3 py-2 text-[10px] font-semibold uppercase tracking-wide text-slate-700">
                 <span>Họ tên</span><span>Thời gian apply</span><span>Vị trí</span><span>Trạng thái</span><span>Người thao tác gần nhất</span><span>Thao tác</span>
               </div>
               {paginatedCandidates.map((candidate) => (
-                <article key={candidate.id} className="grid grid-cols-[1fr_1.2fr_0.9fr_0.8fr_1fr_1.3fr] items-center gap-3 border-b border-indigo-100 px-3 py-2 text-sm transition hover:bg-indigo-50/70">
-                  <button onClick={() => setSelectedCandidate(candidate)} className="truncate text-left font-medium text-slate-800 hover:underline">{candidate.name}</button>
-                  <p className="truncate text-slate-600">{getCandidateApplyTimeDisplay(candidate)}</p>
-                  <p className="truncate text-slate-600">{candidate.position}</p>
-                  <span className={`w-fit rounded-full border px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${statusBadgeMap[candidate.status] ?? "border-slate-600 bg-slate-800 text-slate-200"}`}>{renderStatusLabel(candidate.status)}</span>
-                  <p className="truncate text-slate-600">{displayValue(candidate.lastActionBy)}</p>
-                  <div className="flex items-center gap-4">
-                    <button onClick={() => void handleAction(candidate, "reject")} disabled={savingId === candidate.id || isRejected(candidate.status)} className="inline-flex items-center rounded-lg bg-gradient-to-r from-rose-600 to-pink-600 px-3 py-1.5 text-xs font-semibold text-white disabled:opacity-50">Reject</button>
-                    <button onClick={() => void handleAction(candidate, "invite_interview")} disabled={savingId === candidate.id || isInvited(candidate.status)} className="inline-flex items-center rounded-lg bg-gradient-to-r from-emerald-600 to-teal-600 px-3 py-1.5 text-xs font-semibold text-white disabled:opacity-50">Invite</button>
-                    <button onClick={() => void handleAction(candidate, "onboard")} disabled={savingId === candidate.id || candidate.status === "onboarded"} className="inline-flex items-center rounded-lg bg-gradient-to-r from-blue-600 to-indigo-600 px-3 py-1.5 text-xs font-semibold text-white disabled:opacity-50">Onboard</button>
+                <article key={candidate.id} className="group grid grid-cols-[0.9fr_1.05fr_0.85fr_0.75fr_0.95fr_1.3fr] items-center gap-2 border-b border-blue-300 px-3 py-2.5 text-[13px] transition duration-200 hover:-translate-y-0.5 hover:border-blue-700 hover:bg-gradient-to-r hover:from-blue-100 hover:via-blue-50 hover:to-cyan-50 hover:shadow-[0_14px_34px_-24px_rgba(29,78,216,0.7)]">
+                  <button onClick={() => setSelectedCandidate(candidate)} className="truncate text-left font-medium text-slate-800 transition group-hover:text-blue-800 group-hover:underline">{candidate.name}</button>
+                  <p className="truncate text-slate-600 transition group-hover:text-blue-700">{getCandidateApplyTimeDisplay(candidate)}</p>
+                  <p className="truncate text-slate-600 transition group-hover:text-blue-700">{candidate.position}</p>
+                  <div className="flex items-center">
+                    <span className={`inline-flex w-fit rounded-full border px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide transition group-hover:scale-105 group-hover:shadow-sm ${statusBadgeMap[candidate.status] ?? "border-slate-600 bg-slate-800 text-slate-200"}`}>{renderStatusLabel(candidate.status)}</span>
+                  </div>
+                  <p className="truncate text-slate-600 transition group-hover:text-blue-700">{displayValue(candidate.lastActionBy)}</p>
+                  <div className="flex flex-nowrap items-center gap-1.5 justify-start">
+                    <a href={getCandidateCvLink(candidate)} target="_blank" rel="noreferrer" className="inline-flex h-7 items-center rounded-lg border border-blue-300 bg-white px-2.5 text-[11px] font-semibold text-blue-700 transition duration-200 hover:-translate-y-0.5 hover:border-blue-500 hover:bg-blue-50 hover:shadow-lg hover:shadow-blue-500/20 disabled:pointer-events-none disabled:cursor-not-allowed disabled:opacity-40" title="Mở CV tab mới">
+                      📄 CV
+                    </a>
+                    <button onClick={() => void handleAction(candidate, "reject")} disabled={savingId === candidate.id || isRejected(candidate.status)} className="inline-flex h-7 items-center rounded-lg bg-gradient-to-r from-rose-600 to-pink-600 px-2.5 text-[11px] font-semibold text-white transition duration-200 hover:-translate-y-0.5 hover:shadow-lg hover:shadow-rose-500/25 disabled:opacity-50">Reject</button>
+                    <button onClick={() => void handleAction(candidate, "invite_interview")} disabled={savingId === candidate.id || isInvited(candidate.status)} className="inline-flex h-7 items-center rounded-lg bg-gradient-to-r from-emerald-600 to-teal-600 px-2.5 text-[11px] font-semibold text-white transition duration-200 hover:-translate-y-0.5 hover:shadow-lg hover:shadow-emerald-500/25 disabled:opacity-50">Invite</button>
+                    <button onClick={() => void handleAction(candidate, "onboard")} disabled={savingId === candidate.id || candidate.status === "onboarded"} className="inline-flex h-7 items-center rounded-lg bg-gradient-to-r from-blue-600 to-indigo-600 px-2.5 text-[11px] font-semibold text-white transition duration-200 hover:-translate-y-0.5 hover:shadow-lg hover:shadow-blue-500/25 disabled:opacity-50">Onboard</button>
                   </div>
                 </article>
               ))}
@@ -509,8 +515,8 @@ export default function DashboardPage() {
                   <div className="rounded-3xl border border-indigo-100 bg-gradient-to-br from-indigo-50/80 to-white p-5 shadow-sm">
                     <p className="text-[10px] font-semibold uppercase tracking-wide text-indigo-500">Tổng quan</p>
                     <div className="mt-4 grid gap-3 sm:grid-cols-2">
-                      {[["Họ và tên", selectedCandidate.name], ["Email", selectedCandidate.email], ["Vị trí ứng tuyển", selectedCandidate.position], ["Nguồn ứng tuyển", selectedCandidate.candidateSource], ["Thời gian apply", getCandidateApplyTimeDisplay(selectedCandidate)]].map(([label, value]) => (
-                        <div key={label} className="rounded-2xl border border-slate-200 bg-white px-4 py-3">
+                      {[["Họ và tên", selectedCandidate.name], ["Email", selectedCandidate.email], ["Vị trí ứng tuyển", selectedCandidate.position], ["Nguồn ứng tuyển", selectedCandidate.candidateSource]].map(([label, value]) => (
+                        <div key={label} className="rounded-2xl border border-slate-200 bg-white px-4 py-3 shadow-sm min-h-20">
                           <p className="text-[10px] font-semibold uppercase tracking-wide text-indigo-500">{label}</p>
                           <p className="mt-2 text-sm leading-6 text-slate-800">{displayValue(value)}</p>
                         </div>
@@ -519,7 +525,7 @@ export default function DashboardPage() {
                   </div>
                   <div className="grid gap-4 sm:grid-cols-2">
                     {[["Địa chỉ", selectedCandidate.address], ["Kinh nghiệm", selectedCandidate.experience], ["Điểm đánh giá", selectedCandidate.score], ["Trạng thái", selectedCandidate.status]].map(([label, value]) => (
-                      <div key={label} className="rounded-3xl border border-slate-200 bg-white p-4 shadow-sm">
+                      <div key={label} className="rounded-3xl border border-slate-200 bg-white p-4 shadow-sm min-h-24">
                         <p className="text-[10px] font-semibold uppercase tracking-wide text-indigo-500">{label}</p>
                         <p className="mt-2 whitespace-pre-line text-sm leading-6 text-slate-800">{displayValue(value)}</p>
                       </div>
@@ -532,16 +538,16 @@ export default function DashboardPage() {
                     <div className="mt-4 space-y-4 text-sm leading-6 text-slate-800">
                       <div>
                         <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Kỹ năng</p>
-                        <p className="mt-2 whitespace-pre-line rounded-2xl bg-slate-50 px-4 py-3">{displayValue(selectedCandidate.skills)}</p>
+                        <p className="mt-2 min-h-20 whitespace-pre-line rounded-2xl bg-slate-50 px-4 py-3">{displayValue(selectedCandidate.skills)}</p>
                       </div>
                       <div>
                         <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Đề xuất</p>
-                        <p className="mt-2 whitespace-pre-line rounded-2xl bg-slate-50 px-4 py-3">{displayValue(selectedCandidate.recommendation)}</p>
+                        <p className="mt-2 min-h-20 whitespace-pre-line rounded-2xl bg-slate-50 px-4 py-3">{displayValue(selectedCandidate.recommendation)}</p>
                       </div>
                     </div>
                   </div>
                   <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-1">
-                    {[["Tên file CV", selectedCandidate.cvFileName], ["Thời gian nộp", selectedCandidate.applyTime], ["Người thao tác gần nhất", selectedCandidate.lastActionBy], ["Thời gian thao tác gần nhất", selectedCandidate.lastActionAt]].map(([label, value]) => (
+                    {[["Tên file CV", selectedCandidate.cvFileName], ["Thời gian apply", selectedCandidate.applyTime], ["Người thao tác gần nhất", selectedCandidate.lastActionBy], ["Thời gian thao tác gần nhất", selectedCandidate.lastActionAt]].map(([label, value]) => (
                       <div key={label} className="rounded-3xl border border-slate-200 bg-gradient-to-br from-slate-50 to-white p-4 shadow-sm">
                         <p className="text-[10px] font-semibold uppercase tracking-wide text-indigo-500">{label}</p>
                         <p className="mt-2 whitespace-pre-line text-sm leading-6 text-slate-800">{displayValue(value)}</p>

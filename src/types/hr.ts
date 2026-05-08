@@ -15,6 +15,7 @@ export type Candidate = {
   score?: string;
   recommendation?: string;
   cvFileName?: string;
+  cvLink?: string;
   applyTime?: string;
   raw?: Record<string, unknown>;
 };

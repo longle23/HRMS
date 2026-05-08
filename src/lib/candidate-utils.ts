@@ -52,6 +52,7 @@ export function mapCandidateRecord(record: AnyRecord) {
     score: pickString(record, ["score"], ""),
     recommendation: pickString(record, ["recommendation"], ""),
     cvFileName: pickString(record, ["cv_file_name"], ""),
+    cvLink: pickString(record, ["link", "cv_link", "cvLink"], ""),
     applyTime: pickString(record, ["apply_time"], ""),
     raw: record,
   };
