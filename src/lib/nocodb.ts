@@ -6,6 +6,7 @@ const NOCODB_ACCOUNTS_TABLE = process.env.NOCODB_ACCOUNTS_TABLE;
 const NOCODB_JOB_DESCRIPTION_TABLE = process.env.NOCODB_JOB_DESCRIPTION_TABLE;
 const NOCODB_EMAIL_TEMPLATES_TABLE = process.env.NOCODB_EMAIL_TEMPLATES_TABLE;
 const NOCODB_LOG_EMAIL_TEMPLATES_TABLE = process.env.NOCODB_LOG_TEMPLATES_TABLE;
+const NOCODB_LOG_JD_TABLE = process.env.NOCODB_LOG_JD_TABLE;
 const ONEDRIVE_TENANT_ID = process.env.ONEDRIVE_TENANT_ID;
 const ONEDRIVE_CLIENT_ID = process.env.ONEDRIVE_CLIENT_ID;
 const ONEDRIVE_CLIENT_SECRET = process.env.ONEDRIVE_CLIENT_SECRET;
@@ -233,6 +234,37 @@ export async function appendEmailTemplateLogInNocoDB(fields: Record<string, unkn
   }
 }
 
+export async function updateJobDescriptionInNocoDB(jobId: string, fields: Record<string, unknown>) {
+  const tableId = assertEnv("NOCODB_JOB_DESCRIPTION_TABLE", NOCODB_JOB_DESCRIPTION_TABLE);
+  const tableUrl = getTableUrl(tableId);
+
+  // NocoDB PATCH thường yêu cầu Id trong body hoặc URL
+  const response = await fetch(tableUrl, {
+    method: "PATCH",
+    headers: getHeaders(),
+    body: JSON.stringify({ Id: jobId, ...fields }),
+  });
+
+  if (!response.ok) {
+    const text = await response.text();
+    throw new Error(`NocoDB update job description failed: ${response.status} - ${text}`);
+  }
+}
+
+export async function createJobLogInNocoDB(fields: Record<string, unknown>) {
+  const tableId = assertEnv("NOCODB_LOG_JD_TABLE", NOCODB_LOG_JD_TABLE);
+  const response = await fetch(getTableUrl(tableId), {
+    method: "POST",
+    headers: getHeaders(),
+    body: JSON.stringify(fields),
+  });
+
+  if (!response.ok) {
+    const text = await response.text();
+    throw new Error(`NocoDB create job log failed: ${response.status} - ${text}`);
+  }
+}
+
 async function getOneDriveAccessToken() {
   const tenantId = assertEnv("ONEDRIVE_TENANT_ID", ONEDRIVE_TENANT_ID);
   const clientId = assertEnv("ONEDRIVE_CLIENT_ID", ONEDRIVE_CLIENT_ID);
@@ -281,7 +313,7 @@ function normalizeOneDriveFolderPath(folderPath: string) {
   return trimmed.replace(/^personal\/[^/]+\//i, "");
 }
 
-export async function uploadJobDescriptionToOneDrive(file: File, folderPath = "JD") {
+export async function uploadJobDescriptionToOneDrive(file: File, folderPath = "") {
   const accessToken = await getOneDriveAccessToken();
   const userId = assertEnv("ONEDRIVE_USER_ID", ONEDRIVE_USER_ID);
   const configuredFolderPath = assertEnv("ONEDRIVE_FOLDER_PATH", ONEDRIVE_FOLDER_PATH);

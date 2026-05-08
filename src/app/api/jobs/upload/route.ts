@@ -18,12 +18,12 @@ export async function POST(request: NextRequest) {
       return NextResponse.json<JobUploadResponse>({ success: false, error: "Chỉ chấp nhận file PDF." }, { status: 400 });
     }
 
-    const result = await uploadJobDescriptionToOneDrive(file, typeof folderPath === "string" && folderPath.trim() ? folderPath.trim() : "JD");
+    const result = await uploadJobDescriptionToOneDrive(file, typeof folderPath === "string" ? folderPath.trim() : "");
 
     return NextResponse.json<JobUploadResponse>({
       success: true,
       fileName: result.fileName ?? file.name,
-      folderPath: result.folderPath ?? (typeof folderPath === "string" ? folderPath : "JD"),
+      folderPath: result.folderPath ?? (typeof folderPath === "string" ? folderPath : ""),
       itemUrl: result.itemUrl,
     });
   } catch (error) {
