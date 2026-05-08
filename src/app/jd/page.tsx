@@ -64,6 +64,14 @@ export default function JDPage() {
   const [uploadState, setUploadState] = useState<UploadState>("idle");
   const [uploadSuccessMessage, setUploadSuccessMessage] = useState("");
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const [isEditing, setIsEditing] = useState(false);
+  const [editForm, setEditForm] = useState({
+    certificate: "",
+    requiredExperience: "",
+    requiredEducation: "",
+    extraKeywords: "",
+  });
+  const [isSaving, setIsSaving] = useState(false);
 
   const loadJobs = async (options?: { silent?: boolean }) => {
     const silent = options?.silent ?? false;
@@ -131,7 +139,7 @@ export default function JDPage() {
       setUploadError("");
       const formData = new FormData();
       formData.append("file", uploadFile);
-      formData.append("folderPath", "JD");
+      formData.append("folderPath", "");
       const response = await fetch("/api/jobs/upload", { method: "POST", body: formData });
       const data = (await response.json()) as { success?: boolean; error?: string; fileName?: string; folderPath?: string; itemUrl?: string };
       if (!response.ok || !data.success) throw new Error(data.error ?? "Không thể upload file JD.");
@@ -142,6 +150,82 @@ export default function JDPage() {
     } catch (error) {
       setUploadState("error");
       setUploadError(error instanceof Error ? error.message : "Đã xảy ra lỗi khi upload.");
+    }
+  };
+
+  const startEditing = () => {
+    if (!selectedJob) return;
+    setEditForm({
+      certificate: selectedJob.certificate || "",
+      requiredExperience: selectedJob.requiredExperience || "",
+      requiredEducation: selectedJob.requiredEducation || "",
+      extraKeywords: selectedJob.extraKeywords || "",
+    });
+    setIsEditing(true);
+  };
+
+  const handleSaveJob = async () => {
+    if (!selectedJob || !sessionUser) return;
+
+    try {
+      setIsSaving(true);
+      const updates: Record<string, string> = {};
+      const oldValues: Record<string, string> = {};
+
+      if (editForm.certificate !== (selectedJob.certificate || "")) {
+        updates.certificate = editForm.certificate;
+        oldValues.certificate = selectedJob.certificate || "";
+      }
+      if (editForm.requiredExperience !== (selectedJob.requiredExperience || "")) {
+        updates.required_experience = editForm.requiredExperience;
+        oldValues.required_experience = selectedJob.requiredExperience || "";
+      }
+      if (editForm.requiredEducation !== (selectedJob.requiredEducation || "")) {
+        updates.required_education = editForm.requiredEducation;
+        oldValues.required_education = selectedJob.requiredEducation || "";
+      }
+      if (editForm.extraKeywords !== (selectedJob.extraKeywords || "")) {
+        updates.extra_keywords = editForm.extraKeywords;
+        oldValues.extra_keywords = selectedJob.extraKeywords || "";
+      }
+
+      if (Object.keys(updates).length === 0) {
+        setIsEditing(false);
+        setIsSaving(false);
+        return;
+      }
+
+      const response = await fetch("/api/jobs/update", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          jobId: selectedJob.id,
+          jobCode: selectedJob.jobCode,
+          jobTitle: selectedJob.title,
+          updates,
+          oldValues,
+          actor: sessionUser.fullName || sessionUser.username,
+        }),
+      });
+
+      if (!response.ok) {
+        const data = await response.json();
+        throw new Error(data.error || "Không thể lưu thay đổi.");
+      }
+
+      setIsEditing(false);
+      await loadJobs({ silent: true });
+      setSelectedJob({ 
+        ...selectedJob, 
+        certificate: editForm.certificate,
+        requiredExperience: editForm.requiredExperience,
+        requiredEducation: editForm.requiredEducation,
+        extraKeywords: editForm.extraKeywords
+      });
+    } catch (error) {
+      alert(error instanceof Error ? error.message : "Đã xảy ra lỗi khi lưu.");
+    } finally {
+      setIsSaving(false);
     }
   };
 
@@ -226,7 +310,19 @@ export default function JDPage() {
             <div className="pointer-events-none absolute -right-10 top-6 h-40 w-40 rounded-full bg-cyan-100/70 blur-3xl" />
             <div className="relative z-10 flex flex-wrap items-start justify-between gap-4 border-b border-indigo-100 bg-gradient-to-r from-indigo-50 via-white to-cyan-50 px-6 py-5">
               <div className="min-w-0"><p className="text-[10px] uppercase tracking-[0.24em] text-indigo-500">Chi tiết JD</p><h3 className="mt-1 text-2xl font-bold text-slate-900 sm:text-3xl">{selectedJob.title}</h3></div>
-              <button onClick={() => setSelectedJob(null)} aria-label="Đóng modal" className="group inline-flex items-center gap-2 rounded-full border border-indigo-200 bg-white px-4 py-2.5 text-sm font-semibold text-indigo-700 shadow-sm transition hover:-translate-y-0.5 hover:border-indigo-300 hover:bg-indigo-50 hover:shadow-md focus:outline-none focus:ring-2 focus:ring-indigo-400 focus:ring-offset-2"><span className="flex h-6 w-6 items-center justify-center rounded-full bg-indigo-600 text-[11px] font-bold text-white transition group-hover:bg-indigo-700">×</span>Đóng</button>
+              <div className="flex gap-2">
+                {!isEditing ? (
+                  <button onClick={startEditing} className="inline-flex items-center gap-2 rounded-full border border-amber-200 bg-white px-4 py-2.5 text-sm font-semibold text-amber-700 shadow-sm transition hover:-translate-y-0.5 hover:border-amber-300 hover:bg-amber-50 hover:shadow-md">
+                    <span className="flex h-6 w-6 items-center justify-center rounded-full bg-amber-500 text-[11px] font-bold text-white">✎</span>
+                    Chỉnh sửa
+                  </button>
+                ) : (
+                  <button onClick={() => setIsEditing(false)} className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-600 shadow-sm transition hover:-translate-y-0.5 hover:bg-slate-50">
+                    Hủy sửa
+                  </button>
+                )}
+                <button onClick={() => { setSelectedJob(null); setIsEditing(false); }} aria-label="Đóng modal" className="group inline-flex items-center gap-2 rounded-full border border-indigo-200 bg-white px-4 py-2.5 text-sm font-semibold text-indigo-700 shadow-sm transition hover:-translate-y-0.5 hover:border-indigo-300 hover:bg-indigo-50 hover:shadow-md focus:outline-none focus:ring-2 focus:ring-indigo-400 focus:ring-offset-2"><span className="flex h-6 w-6 items-center justify-center rounded-full bg-indigo-600 text-[11px] font-bold text-white transition group-hover:bg-indigo-700">×</span>Đóng</button>
+              </div>
             </div>
             <div className="max-h-[76vh] overflow-y-auto px-6 py-6">
               <div className="grid gap-4 lg:grid-cols-[1.05fr_0.95fr] xl:grid-cols-[1.2fr_0.8fr]">
@@ -234,21 +330,39 @@ export default function JDPage() {
                   <div className="rounded-3xl border border-indigo-100 bg-gradient-to-br from-indigo-50/80 to-white p-5 shadow-sm">
                     <p className="text-[10px] font-semibold uppercase tracking-wide text-indigo-500">Tổng quan</p>
                     <div className="mt-4 grid gap-3 sm:grid-cols-2">
-                      {[ ["Mã job", selectedJob.id], ["Tên job", selectedJob.title], ["Phòng ban", selectedJob.department], ["Địa điểm", selectedJob.workplace] ].map(([label, value]) => (
+                      {[["Mã job", selectedJob.id], ["Tên job", selectedJob.title], ["Phòng ban", selectedJob.department], ["Địa điểm", selectedJob.workplace]].map(([label, value]) => (
                         <div key={label} className="rounded-2xl border border-slate-200 bg-white px-4 py-3">
                           <p className="text-[10px] font-semibold uppercase tracking-wide text-indigo-500">{label}</p>
                           <p className="mt-2 text-sm leading-6 text-slate-800">{value || "-"}</p>
                         </div>
-                      )) }
+                      ))}
                     </div>
                   </div>
                   <div className="grid gap-4 sm:grid-cols-2">
-                    {[ ["Trạng thái", selectedJob.status], ["Thời gian tạo", formatDate(selectedJob.createdAtTime)], ["Kinh nghiệm", selectedJob.requiredExperience], ["Học vấn", selectedJob.requiredEducation] ].map(([label, value]) => (
-                      <div key={label} className="rounded-3xl border border-slate-200 bg-white p-4 shadow-sm">
-                        <p className="text-[10px] font-semibold uppercase tracking-wide text-indigo-500">{label}</p>
-                        <p className="mt-2 whitespace-pre-line text-sm leading-6 text-slate-800">{value || "-"}</p>
-                      </div>
-                    )) }
+                    <div className="rounded-3xl border border-slate-200 bg-white p-4 shadow-sm">
+                      <p className="text-[10px] font-semibold uppercase tracking-wide text-indigo-500">Trạng thái</p>
+                      <p className="mt-2 whitespace-pre-line text-sm leading-6 text-slate-800">{selectedJob.status || "-"}</p>
+                    </div>
+                    <div className="rounded-3xl border border-slate-200 bg-white p-4 shadow-sm">
+                      <p className="text-[10px] font-semibold uppercase tracking-wide text-indigo-500">Thời gian tạo</p>
+                      <p className="mt-2 whitespace-pre-line text-sm leading-6 text-slate-800">{formatDate(selectedJob.createdAtTime)}</p>
+                    </div>
+                    <div className={`rounded-3xl border p-4 shadow-sm transition ${isEditing ? 'border-amber-300 bg-amber-50/30' : 'border-slate-200 bg-white'}`}>
+                      <p className="text-[10px] font-semibold uppercase tracking-wide text-indigo-500">Kinh nghiệm</p>
+                      {isEditing ? (
+                        <textarea value={editForm.requiredExperience} onChange={(e) => setEditForm({ ...editForm, requiredExperience: e.target.value })} className="mt-2 w-full rounded-xl border border-amber-200 bg-white p-3 text-sm outline-none focus:ring-2 focus:ring-amber-400" rows={3} />
+                      ) : (
+                        <p className="mt-2 whitespace-pre-line text-sm leading-6 text-slate-800">{selectedJob.requiredExperience || "-"}</p>
+                      )}
+                    </div>
+                    <div className={`rounded-3xl border p-4 shadow-sm transition ${isEditing ? 'border-amber-300 bg-amber-50/30' : 'border-slate-200 bg-white'}`}>
+                      <p className="text-[10px] font-semibold uppercase tracking-wide text-indigo-500">Học vấn</p>
+                      {isEditing ? (
+                        <textarea value={editForm.requiredEducation} onChange={(e) => setEditForm({ ...editForm, requiredEducation: e.target.value })} className="mt-2 w-full rounded-xl border border-amber-200 bg-white p-3 text-sm outline-none focus:ring-2 focus:ring-amber-400" rows={3} />
+                      ) : (
+                        <p className="mt-2 whitespace-pre-line text-sm leading-6 text-slate-800">{selectedJob.requiredEducation || "-"}</p>
+                      )}
+                    </div>
                   </div>
                 </div>
                 <div className="space-y-4">
@@ -257,10 +371,34 @@ export default function JDPage() {
                     <div className="mt-4 space-y-4 text-sm leading-6 text-slate-800">
                       <div><p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Nội dung JD</p><p className="mt-2 whitespace-pre-line rounded-2xl bg-slate-50 px-4 py-3">{selectedJob.content || "-"}</p></div>
                       <div><p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Kỹ năng yêu cầu</p><p className="mt-2 whitespace-pre-line rounded-2xl bg-slate-50 px-4 py-3">{selectedJob.requiredSkills || "-"}</p></div>
-                      <div><p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Chứng chỉ</p><p className="mt-2 whitespace-pre-line rounded-2xl bg-slate-50 px-4 py-3">{selectedJob.certificate || "-"}</p></div>
+                      
+                      <div className={`rounded-2xl border p-4 transition ${isEditing ? 'border-amber-300 bg-amber-50/30' : 'bg-white border-transparent'}`}>
+                        <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Chứng chỉ</p>
+                        {isEditing ? (
+                          <textarea value={editForm.certificate} onChange={(e) => setEditForm({ ...editForm, certificate: e.target.value })} className="mt-2 w-full rounded-xl border border-amber-200 bg-white p-3 text-sm outline-none focus:ring-2 focus:ring-amber-400" rows={2} />
+                        ) : (
+                          <p className="mt-2 whitespace-pre-line text-slate-800">{selectedJob.certificate || "-"}</p>
+                        )}
+                      </div>
+
                       <div><p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Từ khóa</p><p className="mt-2 whitespace-pre-line rounded-2xl bg-slate-50 px-4 py-3">{selectedJob.keywords || "-"}</p></div>
-                      <div><p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Từ khóa bổ sung</p><p className="mt-2 whitespace-pre-line rounded-2xl bg-slate-50 px-4 py-3">{selectedJob.extraKeywords || "-"}</p></div>
+
+                      <div className={`rounded-2xl border p-4 transition ${isEditing ? 'border-amber-300 bg-amber-50/30' : 'bg-white border-transparent'}`}>
+                        <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Từ khóa bổ sung</p>
+                        {isEditing ? (
+                          <textarea value={editForm.extraKeywords} onChange={(e) => setEditForm({ ...editForm, extraKeywords: e.target.value })} className="mt-2 w-full rounded-xl border border-amber-200 bg-white p-3 text-sm outline-none focus:ring-2 focus:ring-amber-400" rows={3} />
+                        ) : (
+                          <p className="mt-2 whitespace-pre-line text-slate-800">{selectedJob.extraKeywords || "-"}</p>
+                        )}
+                      </div>
                     </div>
+                    {isEditing && (
+                      <div className="mt-6 flex justify-end">
+                        <button onClick={handleSaveJob} disabled={isSaving} className="rounded-2xl bg-gradient-to-r from-emerald-600 via-teal-600 to-cyan-600 px-8 py-3 text-sm font-bold text-white shadow-lg transition hover:-translate-y-1 hover:shadow-xl disabled:opacity-50">
+                          {isSaving ? "Đang lưu..." : "Lưu thay đổi"}
+                        </button>
+                      </div>
+                    )}
                   </div>
                 </div>
               </div>

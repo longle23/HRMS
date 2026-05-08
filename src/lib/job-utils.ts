@@ -19,13 +19,13 @@ function normalizeStatus(status: string) {
 }
 
 export function mapJobDescriptionRecord(record: AnyRecord) {
-  const idValue = record.Id ?? record.id ?? record.ID ?? record.job_id ?? record.job_code;
+  const idValue = record.Id ?? record.id ?? record.ID ?? record.id_job ?? record.job_id ?? record.job_code;
   const id = String(idValue ?? "");
   const status = normalizeStatus(pickString(record, ["status", "Status"], "active"));
 
   return {
     id,
-    jobCode: pickString(record, ["job_code", "jobCode", "job_no", "job_id"], id),
+    jobCode: pickString(record, ["id_job", "job_code", "jobCode", "job_no", "job_id"], id),
     title: pickString(record, ["job_title", "jobTitle", "title", "position"], "Untitled JD"),
     department: pickString(record, ["department", "Department"], "-"),
     workplace: pickString(record, ["workplace", "Workplace", "location"], "-"),
