@@ -52,19 +52,35 @@ function formatDate(value: unknown) {
   return `${day}/${month}/${year}`;
 }
 
+function parseDateTime(value: unknown) {
+  if (!value) return null;
+  if (value instanceof Date) return Number.isNaN(value.getTime()) ? null : value;
+
+  const text = String(value).trim();
+  if (!text) return null;
+
+  const normalized = text.match(/^(\d{2})-(\d{2})-(\d{4})(?:\s+(\d{2}):(\d{2})(?::(\d{2}))?)?$/);
+  if (normalized) {
+    const [, day, month, year, hour = "00", minute = "00", second = "00"] = normalized;
+    const date = new Date(Number(year), Number(month) - 1, Number(day), Number(hour), Number(minute), Number(second));
+    return Number.isNaN(date.getTime()) ? null : date;
+  }
+
+  const date = new Date(text);
+  return Number.isNaN(date.getTime()) ? null : date;
+}
+
 function formatDateTime(value: unknown) {
-  if (!value) return "-";
-  const date = new Date(String(value));
-  if (Number.isNaN(date.getTime())) return String(value);
+  const date = parseDateTime(value);
+  if (!date) return displayValue(value);
 
   const pad = (input: number) => String(input).padStart(2, "0");
-  return `${pad(date.getDate())}-${pad(date.getMonth() + 1)}-${date.getFullYear()} ${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`;
+  return `${pad(date.getDate())}-${pad(date.getMonth() + 1)}-${date.getFullYear()} ${pad(date.getHours())}:${pad(date.getMinutes())}`;
 }
 
 function getCandidateApplyTime(candidate: Candidate) {
   const value = candidate.applyTime ?? candidate.raw?.apply_time ?? candidate.raw?.ApplyTime ?? candidate.raw?.createdAt ?? candidate.raw?.created_at ?? "";
-  const date = new Date(String(value));
-  return Number.isNaN(date.getTime()) ? 0 : date.getTime();
+  return parseDateTime(value)?.getTime() ?? 0;
 }
 
 function getCandidateApplyTimeDisplay(candidate: Candidate) {
@@ -138,11 +154,6 @@ export default function DashboardPage() {
     if (!sessionUser) return;
 
     void loadCandidates();
-    const intervalId = window.setInterval(() => {
-      void loadCandidates({ silent: true });
-    }, 15000);
-
-    return () => window.clearInterval(intervalId);
   }, [sessionUser]);
 
   useEffect(() => {
