@@ -47,7 +47,7 @@ export default function WelcomePage() {
               </span>
             </h1>
             <p className="mt-4 max-w-4xl text-base leading-8 text-slate-600 sm:text-lg">
-              Hãy chuyển sang trang ứng viên hoặc JD để theo dõi ứng viên và thao tác.
+              Hãy chuyển sang trang ứng viên hoặc JD để theo dõi ứng viên và thao tác..
             </p>
 
             <div className="mt-8 w-full max-w-3xl rounded-[28px] border border-indigo-100 bg-gradient-to-br from-indigo-50 via-white to-cyan-50 p-5 shadow-sm md:p-7">
