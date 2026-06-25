@@ -89,6 +89,17 @@ function getCandidateApplyTimeDisplay(candidate: Candidate) {
 
 function readSessionUser() {
   if (typeof window === "undefined") return null;
+
+  const cookieMatch = document.cookie.match(/(?:^|; )hrms_session_user=([^;]+)/);
+  if (cookieMatch?.[1]) {
+    try {
+      const parsed = JSON.parse(decodeURIComponent(cookieMatch[1])) as AccountUser;
+      if (parsed?.username) return parsed;
+    } catch {
+      // ignore invalid cookie payloads and fall back to localStorage
+    }
+  }
+
   const raw = window.localStorage.getItem("hrms_session_user");
   if (!raw) return null;
   try {

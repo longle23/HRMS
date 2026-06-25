@@ -6,6 +6,21 @@ function normalize(value: unknown) {
   return typeof value === "string" ? value.trim() : "";
 }
 
+function buildSessionCookie(user: AccountUser) {
+  const isProduction = process.env.NODE_ENV === "production";
+  const cookieValue = encodeURIComponent(JSON.stringify(user));
+  const parts = [
+    `hrms_session_user=${cookieValue}`,
+    "Path=/",
+    "Max-Age=86400",
+    "SameSite=Lax",
+    isProduction ? "Secure" : "",
+    "Domain=.sotransgroup.vn",
+  ].filter(Boolean);
+
+  return parts.join("; ");
+}
+
 export async function POST(request: NextRequest) {
   try {
     const body = (await request.json()) as { username?: string; password?: string };
@@ -34,7 +49,9 @@ export async function POST(request: NextRequest) {
       email: normalize(matched.email ?? matched.Email),
     };
 
-    return NextResponse.json({ user });
+    const response = NextResponse.json({ user });
+    response.headers.append("Set-Cookie", buildSessionCookie(user));
+    return response;
   } catch (error) {
     const message = error instanceof Error ? error.message : "Unknown error";
     return NextResponse.json({ error: message }, { status: 500 });

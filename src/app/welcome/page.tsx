@@ -10,6 +10,19 @@ export default function WelcomePage() {
   const [sessionUser, setSessionUser] = useState<AccountUser | null>(null);
 
   useEffect(() => {
+    const cookieMatch = document.cookie.match(/(?:^|; )hrms_session_user=([^;]+)/);
+    if (cookieMatch?.[1]) {
+      try {
+        const parsed = JSON.parse(decodeURIComponent(cookieMatch[1])) as AccountUser;
+        if (parsed?.username) {
+          setSessionUser(parsed);
+          return;
+        }
+      } catch {
+        // ignore invalid cookie payloads and fall back to localStorage
+      }
+    }
+
     const rawUser = window.localStorage.getItem("hrms_session_user");
     if (!rawUser) {
       router.replace("/login");
@@ -28,7 +41,7 @@ export default function WelcomePage() {
 
   return (
     <main className="min-h-screen bg-gradient-to-br from-sky-100 via-indigo-100 to-cyan-100 text-slate-800">
-      <TopNav user={sessionUser ? { name: sessionUser.fullName || sessionUser.username } : null} onLogout={() => { window.localStorage.removeItem("hrms_session_user"); router.replace("/login"); }} />
+      <TopNav user={sessionUser ? { name: sessionUser.fullName || sessionUser.username } : null} onLogout={() => { window.localStorage.removeItem("hrms_session_user"); document.cookie = "hrms_session_user=; Path=/; Domain=.sotransgroup.vn; Max-Age=0; SameSite=Lax"; router.replace("/login"); }} />
 
       <div className="mx-auto flex min-h-[calc(100vh-70px)] w-full max-w-7xl items-center px-4 py-10">
         <section className="relative w-full overflow-hidden rounded-[36px] border border-white/40 bg-white/85 p-6 shadow-[0_40px_120px_-48px_rgba(59,130,246,0.65)] backdrop-blur md:p-8 lg:p-10">

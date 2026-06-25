@@ -1,26 +1,13 @@
 "use client";
 
 import { useEffect } from "react";
-import { useRouter } from "next/navigation";
+
+const EXTERNAL_LOGIN_URL = "https://ai-platform.sotransgroup.vn/login";
 
 export default function Home() {
-  const router = useRouter();
-
   useEffect(() => {
-    const rawUser = window.localStorage.getItem("hrms_session_user");
-    if (!rawUser) {
-      router.replace("/login");
-      return;
-    }
-
-    try {
-      const parsed = JSON.parse(rawUser) as { username?: string };
-      router.replace(parsed?.username ? "/welcome" : "/login");
-    } catch {
-      window.localStorage.removeItem("hrms_session_user");
-      router.replace("/login");
-    }
-  }, [router]);
+    window.location.replace(EXTERNAL_LOGIN_URL);
+  }, []);
 
   return null;
 }
